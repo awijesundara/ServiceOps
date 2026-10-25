@@ -12,6 +12,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 from serviceops_core.attachment_history import deleted_comment_attachments
+from serviceops_core.change_service_impact import impacted_services
 from werkzeug.exceptions import HTTPException
 
 import app as core
@@ -1322,6 +1323,7 @@ def register(app):
             deleted_attachments=deleted_comment_attachments(history),
             internal_view=internal_view,
             ci_links=ci_links,
+            derived_impacted_services=impacted_services(ticket, current_user) if internal_view else [],
             rack_cis=rack_cis,
             rack_labels={ci.id: rack_label(ci) for ci in rack_cis},
             open_on_affected_cis=bool(rack_cis) and is_data_center_group(owning_group),

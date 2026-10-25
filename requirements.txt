@@ -21,7 +21,7 @@ urllib3==2.8.0
 psycopg[binary]==3.3.6
 gunicorn==26.2.0
 Werkzeug==3.1.9
-setuptools==84.0.0
+setuptools==84.1.0
 msgpack==1.2.3
 argon2-cffi==25.1.0
 pyotp==2.10.0

@@ -705,6 +705,12 @@ def register(app):
     def admin_home():
         return render_template("admin_home.html", active_section=None, update_info=latest_update_info())
 
+    @app.get("/admin/interface-standards")
+    @roles("admin")
+    @require_action("security_administer")
+    def interface_standards():
+        return render_template("interface_standards.html")
+
     @app.get("/admin/section/<section>")
     @roles("admin")
     @require_action("security_administer")
@@ -2724,6 +2730,26 @@ def register(app):
                 audit("delete", f"Change freeze: {window.title}")
                 db.session.delete(window)
                 flash(tr("Change freeze removed."), "success")
+            elif action in ("create_service_offering", "update_service_offering"):
+                from serviceops_core.service_offerings import save_service_offering
+                service = save_service_offering(
+                    form_int("service_offering_id", required=True) if action == "update_service_offering" else None,
+                )
+                flash(tr("Service {name} saved.", name=service.name), "success")
+                if request.form.get("return_section") == "service-offerings":
+                    return redirect(url_for("itil_admin_section", section="service-offerings", service=service.id)
+                                    + f"#service-{service.id}", code=303)
+                return _admin_referrer_redirect("itil_admin")
+            elif action == "update_service_ci_role":
+                link = db.get_or_404(ServiceOfferingCI, form_int("link_id", required=True))
+                if link.tenant_id != current_user.tenant_id or link.service_offering.tenant_id != current_user.tenant_id:
+                    abort(404)
+                role = request.form.get("relationship_role")
+                if role not in ("Primary", "Supporting"):
+                    abort(400)
+                link.relationship_role = role
+                audit("configure", f"{link.service_offering.name} service mapping"[:120], f"{link.ci.name}: {role}")
+                flash(tr("CI relationship saved."), "success")
             elif action == "link_service_ci":
                 service = tenant_record_or_404(ServiceOffering, form_int("service_offering_id", required=True))
                 role = request.form.get("relationship_role", "Supporting")
@@ -2748,21 +2774,21 @@ def register(app):
                             service_offering_id=service.id, ci_id=ci.id, relationship_role=role,
                         ))
                     linked_names.append(ci.name)
-                audit("configure", f"{service.name} service mapping",
+                audit("configure", f"{service.name} service mapping"[:120],
                       f"{role}: {', '.join(linked_names)}")
                 flash(tr("{linked_names} linked to {name}.", linked_names=', '.join(linked_names), name=service.name), "success")
             elif action == "unlink_service_ci":
                 link = db.get_or_404(ServiceOfferingCI, form_int("link_id", required=True))
                 if link.tenant_id != current_user.tenant_id:
                     abort(404)
-                audit("configure", f"{link.service_offering.name} service mapping",
+                audit("configure", f"{link.service_offering.name} service mapping"[:120],
                       f"removed {link.ci.name}")
                 db.session.delete(link)
                 flash(tr("{name} unlinked from {name2}.", name=link.ci.name, name2=link.service_offering.name), "success")
             elif action == "toggle_service_status_page_visibility":
                 service = tenant_record_or_404(ServiceOffering, form_int("service_offering_id", required=True))
                 service.status_page_visible = not service.status_page_visible
-                audit("configure", f"{service.name} status page visibility",
+                audit("configure", f"{service.name} status page visibility"[:120],
                       "visible" if service.status_page_visible else "hidden")
                 flash(
                     tr("{name} is now {value} the public status page.", name=service.name, value='visible on' if service.status_page_visible else 'hidden from'), "success",
@@ -2835,6 +2861,12 @@ def register(app):
                     DirectoryManagedMembership.group_id.in_([group.id for group in groups])
                 )
             }
+        service_search = request.args.get("q", "").strip() if section == "service-offerings" else ""
+        service_query = tenant_query(ServiceOffering)
+        if service_search:
+            service_query = service_query.filter(ServiceOffering.name.ilike(
+                "%" + service_search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%", escape="\\",
+            ))
         return render_template(
             "itil_admin_section.html", section=section, title=title, description=description,
             groups=groups, teams=teams,
@@ -2851,7 +2883,10 @@ def register(app):
             support_group_aliases=tenant_query(SupportGroupAlias).order_by(
                 SupportGroupAlias.alias
             ).all(),
-            services=tenant_query(ServiceOffering).all(),
+            services=service_query.options(selectinload(ServiceOffering.ci_links).selectinload(ServiceOfferingCI.ci),
+                                           selectinload(ServiceOffering.support_group)).order_by(ServiceOffering.name).all(),
+            service_search=service_search,
+            selected_service_id=request.args.get("service", type=int),
             ticket_categories=tenant_query(TicketCategory).order_by(TicketCategory.name).all(),
             category_option_limit=CATEGORY_LEVEL_OPTION_LIMIT,
             sla_definitions=tenant_query(SLADefinition).all(),

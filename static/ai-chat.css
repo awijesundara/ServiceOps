@@ -201,8 +201,7 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
 .aiadm-fine{margin:0;font-size:12px}
 .aiadm-testnote{margin:0;font-size:12.5px;min-height:1em}
 .aiadm-testnote.is-bad{color:#9d2a22;font-weight:650}
-.aiadm-card-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
-.aiadm-card-actions .button{padding:6px 12px;font-size:12.5px}
+.aiadm-card-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}.aiadm-card-actions .button{}
 .aiadm-empty{text-align:center;color:var(--muted);padding:26px}
 .aiadm-choices{border:0;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
 .aiadm-choices.compact{grid-template-columns:1fr;gap:8px}
@@ -520,8 +519,7 @@ span.ai-cite-pending{border-bottom:1px dotted var(--muted);opacity:.85}
 .ai-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
 .ai-composer .ai-composer-row{margin:0;display:flex;gap:8px;align-items:center}
 .ai-composer .ai-count{position:absolute;right:92px;bottom:-2px}
-.ai-composer{position:relative}
-.ai-composer .primary{padding:9px 16px}
+.ai-composer{position:relative}.ai-composer .primary{}
 a.ai-page-chip{text-decoration:none;display:inline-block}
 .ai-run a.ai-page-chip{color:var(--ai-accent,#003e4c);font-weight:650}
 

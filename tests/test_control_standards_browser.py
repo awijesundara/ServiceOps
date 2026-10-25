@@ -21,7 +21,7 @@ def test_shared_controls_and_current_project_tab(server, dark, width):
                 page.evaluate("document.documentElement.classList.add('theme-dark')")
                 page.evaluate("""() => {const link = document.createElement('link');
                   link.rel='stylesheet';link.href='/static/dark.css';document.head.append(link)}""")
-                page.wait_for_function("Array.from(document.styleSheets).some(s=>s.href && s.href.includes('dark.css'))")
+                page.wait_for_function("() => Array.from(document.styleSheets).some(s=>s.href && s.href.includes('dark.css'))")
             current = page.locator('.project-tabs a[aria-current="page"]')
             assert current.count() == 1
             indicator = current.evaluate("e => {const s=getComputedStyle(e,'::after');return {height:s.height,background:s.backgroundColor}}")

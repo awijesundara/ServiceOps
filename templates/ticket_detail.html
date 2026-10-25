@@ -75,7 +75,7 @@
     <p class="muted">{{ tr('Locked: related records can no longer be changed once this change is approved.') }}</p>
     {% else %}
     <form method="post" action="{{ url_for('record_link_add', source_type='ticket', source_id=ticket.id) }}" class="inline-form">
-      <select name="link_type">
+      <select name="link_type" aria-label="{{ tr('Relationship') }}">
         <option value="related_incident">{{ tr('Related incident') }}</option>
         <option value="requested_item_change">{{ tr('Requested item') }}</option>
       </select>
@@ -93,7 +93,7 @@
 {#- The current approval first; superseded rounds follow, greyed out. -#}
 {% for chain in chains|sort(attribute='id', reverse=True) %}{% for gate in chain.gates %}{% for vote in gate.votes %}{% set _ = approver_votes.append((chain, gate, vote)) %}{% endfor %}{% endfor %}{% endfor %}
 {% set affected_cis = ci_links|selectattr('relationship_role','equalto','Affected CI')|list %}
-{% set impacted_services = ci_links|selectattr('relationship_role','equalto','Impacted service')|list %}
+{% set impacted_ci_links = ci_links|selectattr('relationship_role','equalto','Impacted service')|list %}
 {% set problem_links = related|selectattr('link.link_type','in',['underlying_problem','problem_change'])|list %}
 {% set incidents_fixed = related|selectattr('link.link_type','equalto','resolution_change')|list %}
 {% set incidents_caused = related|selectattr('link.link_type','equalto','caused_by_change')|list %}
@@ -102,7 +102,7 @@
 <nav class="record-section-tabs" aria-label="{{ tr('{kind} sections', kind=(ticket.kind|title)) }}"{% if open_on_affected_cis %} data-default-tab="{{ 'gov-affected-cis' if ticket.change_governance else 'affected-cis' }}"{% endif %}>
   <a class="active" href="#notes">{{ tr('Notes') }}</a>{% if not ticket.change_governance %}<a href="#related-records">{{ tr('Related records') }}</a><a href="#affected-cis">{{ tr('Affected CIs') }}</a>{% endif %}{% if ticket.change_governance %}<a href="#governance">{{ tr('Change governance') }}</a>
   <a href="#gov-affected-cis">{{ tr('Affected CIs') }}</a>
-  <a href="#gov-impacted-services">{{ tr('Impacted Services/CIs') }}</a>
+  <a href="#gov-impacted-services">{{ tr('Impacted Services/CIs') }} ({{ tr('{services} services, {cis} manual CIs', services=derived_impacted_services|length, cis=impacted_ci_links|length) }})</a>
   <a href="#gov-approvers">{{ tr('Approvers ({approver_votes})', approver_votes=(approver_votes|length)) }}</a>
   <a href="#gov-change-tasks">{{ tr('Change Tasks ({work_tasks})', work_tasks=(work_tasks|length)) }}</a>
   <a href="#gov-problems">{{ tr('Problems') }}</a>
@@ -184,7 +184,7 @@
   {% for item in related %}<a class="attachment" href="{{ item.url }}"><strong>{{ tr_value(item.label) }} · {{ item.number }}</strong><span>{{ item.title }}</span></a>{% else %}<p class="muted">{{ tr('No related records.') }}</p>{% endfor %}
   {% if can_manage_ticket %}
   <form method="post" action="{{ url_for('record_link_add', source_type='ticket', source_id=ticket.id) }}" class="inline-form">
-    <select name="link_type">
+    <select name="link_type" aria-label="{{ tr('Relationship') }}">
       <option value="parent_incident">{{ tr('Parent incident') }}</option><option value="underlying_problem">{{ tr('Problem') }}</option>
       <option value="resolution_change">{{ tr('Change request') }}</option><option value="caused_by_change">{{ tr('Caused by change') }}</option>
       <option value="converted_request">{{ tr('Service request') }}</option>
@@ -312,16 +312,23 @@
 
 <section class="panel table-panel gov-tab-panel" id="gov-impacted-services">
   <div class="gov-tab-condition">{{ tr('Change request') }} = <b>{{ ticket.number }}</b></div>
-  <header class="section-heading"><div><h2>{{ tr('Impacted services/CIs') }}</h2></div><span>{{ tr('{impacted_services} linked', impacted_services=(impacted_services|length)) }}</span></header>
+  <header class="section-heading"><div><h2>{{ tr('Impacted services/CIs') }}</h2></div><span>{{ tr('{services} services, {cis} manually linked CIs', services=derived_impacted_services|length, cis=impacted_ci_links|length) }}</span></header>
+  <h3>{{ tr('Service offerings') }}</h3>
+  <p class="muted">{{ tr('Calculated from the primary and affected CIs and their current service mappings.') }}</p>
+  <div class="task-list-scroll"><table><thead><tr><th>{{ tr('Service offering') }}</th><th>{{ tr('Criticality') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Related CIs') }}</th></tr></thead><tbody>
+    {% for service in derived_impacted_services %}<tr data-impacted-service="{{ service.id }}"><td>{{ service.name }}</td><td>{{ tr_value(service.criticality) }}</td><td>{{ tr_value(service.status) }}</td><td>{% for ci in service.configuration_items %}{{ ci.name }} ({{ tr_value(ci.relationship_role) }}){% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+    {% else %}<tr><td colspan="4" class="empty">{{ tr('No service offerings mapped to the primary or affected CIs.') }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <h3>{{ tr('Manually linked impacted CIs') }}</h3>
   <div class="task-list-scroll"><table><thead><tr><th>{{ tr('Configuration item') }}</th><th>{{ tr('Class') }}</th><th>{{ tr('Environment') }}</th></tr></thead><tbody>
-    {% for link in impacted_services %}<tr><td>{{ link.ci.name }}</td><td>{{ link.ci.ci_class }}</td><td>{{ link.ci.environment }}</td></tr>{% else %}<tr><td colspan="3" class="empty">{{ tr('No impacted services linked.') }}</td></tr>{% endfor %}
+    {% for link in impacted_ci_links %}<tr><td>{{ link.ci.name }}</td><td>{{ link.ci.ci_class }}</td><td>{{ link.ci.environment }}</td></tr>{% else %}<tr><td colspan="3" class="empty">{{ tr('No manually linked impacted CIs.') }}</td></tr>{% endfor %}
   </tbody></table></div>
   {% if can_manage_ticket %}
   <details class="gov-tab-new"><summary>{{ tr('New') }}</summary>
     <form method="post" action="{{ url_for('task_ci_add', target_type='ticket', target_id=ticket.id) }}" class="inline-form">
       <input type="hidden" name="relationship_role" value="Impacted service">
       <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
-      <button class="primary">{{ tr('Link impacted services') }}</button>
+      <button class="primary">{{ tr('Link impacted CIs') }}</button>
     </form>
   </details>
   {% endif %}

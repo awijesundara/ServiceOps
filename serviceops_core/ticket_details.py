@@ -8,6 +8,7 @@ from werkzeug.exceptions import HTTPException
 from sqlalchemy.orm import selectinload
 
 from serviceops_core.ci_class_policy import ci_class_read_allowed
+from serviceops_core.change_service_impact import impacted_services
 from serviceops_models import (ApprovalChain, ApprovalGate, ApprovalVote, ConfigurationItem,
                                TaskCI, TaskHistory, TaskSLA, OperationalTask, MajorIncidentUpdate)
 
@@ -18,7 +19,7 @@ def ticket_details(ticket, user, *, include_sections=True):
         import app as core
         tenant = ticket.tenant_id
         staff = core.effective_role_has_action(user.effective_role, "comment_internal")
-        result = {"schema_version": 1, "configuration_items": [], "sections": [],
+        result = {"schema_version": 1, "configuration_items": [], "impacted_services": [], "sections": [],
                   "can_manage": core.user_can_manage_ticket(user, ticket) and not core.ticket_locked_for_edits(ticket),
                   "allowed_states": core.allowed_ticket_states(ticket)}
         sections = result["sections"]
@@ -27,6 +28,7 @@ def ticket_details(ticket, user, *, include_sections=True):
         # Requesters receive the public ticket contract, never internal topology/history.
         if not staff:
             return result
+        result["impacted_services"] = impacted_services(ticket, user)
         links = TaskCI.query.filter_by(target_type="ticket", target_id=ticket.id).options(
             selectinload(TaskCI.ci).selectinload(ConfigurationItem.rack),
         ).order_by(TaskCI.id).all()
@@ -219,10 +221,17 @@ TICKET_DETAIL_SCHEMAS = {
         **{key: {"type": ["string", "null"]} for key in ("ip_address", "location", "serial_number", "vendor", "model", "description")},
         "rack": {"anyOf": [{"$ref": "#/components/schemas/TicketRackLocation"}, {"type": "null"}]},
     }},
+    "ImpactedService": {"type": "object", "required": ["id", "name", "criticality", "status", "configuration_items"], "properties": {
+        "id": {"type": "integer"}, "name": {"type": "string"}, "criticality": {"type": "string"}, "status": {"type": "string"},
+        "configuration_items": {"type": "array", "items": {"type": "object", "required": ["id", "name", "relationship_role"], "properties": {
+            "id": {"type": "integer"}, "name": {"type": "string"}, "relationship_role": {"type": "string"},
+        }}},
+    }},
     "TicketDetails": {"type": "object", "required": ["schema_version", "can_manage", "allowed_states", "configuration_items", "sections"], "properties": {
         "schema_version": {"type": "integer", "const": 1}, "can_manage": {"type": "boolean"},
         "allowed_states": {"type": "array", "items": {"type": "string"}},
         "configuration_items": {"type": "array", "items": {"$ref": "#/components/schemas/TicketConfigurationItem"}},
+        "impacted_services": {"type": "array", "items": {"$ref": "#/components/schemas/ImpactedService"}},
         "sections": {"type": "array", "items": {"$ref": "#/components/schemas/TicketDetailSection"}},
     }},
     "TicketDetailsEnvelope": {"type": "object", "required": ["data"], "properties": {

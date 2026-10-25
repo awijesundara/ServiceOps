@@ -46,6 +46,7 @@ NAVIGATION_ENTRIES = (
     NavigationEntry("Suppliers", "Vendors resellers manufacturers service providers GLPI", "itam_list", {"kind": "suppliers"}, "agent"),
     NavigationEntry("Contracts", "Support maintenance lease subscription renewal notice expiry GLPI", "itam_list", {"kind": "contracts"}, "agent"),
     NavigationEntry("Analytics", "Reports dashboards service performance", "analytics", minimum_role="agent"),
+    NavigationEntry("Interface standards", "Design system components layout accessibility", "interface_standards", minimum_role="admin"),
     NavigationEntry("Administration", "Platform administration configuration", "admin_home", minimum_role="admin"),
     NavigationEntry("Users and access", "Users roles accounts", "users", minimum_role="admin"),
     NavigationEntry("API clients", "REST credentials tokens", "api_clients_admin", minimum_role="admin"),

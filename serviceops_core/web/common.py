@@ -712,6 +712,10 @@ def _admin_referrer_redirect(fallback_endpoint, **fallback_kwargs):
     if fallback_endpoint == "itil_admin" and section in ITIL_ADMIN_SECTIONS:
         destination = url_for("itil_admin_section", section=section)
         panel = request.form.get("return_panel", "")
+        if section == "service-offerings" and re.fullmatch(r"service-[1-9][0-9]{0,9}", panel):
+            service_id = int(panel[8:])
+            if tenant_query(ServiceOffering).filter_by(id=service_id).first():
+                destination = url_for("itil_admin_section", section=section, service=service_id) + "#" + panel
         if re.fullmatch(r"group-[1-9][0-9]{0,9}", panel):
             destination = url_for("itil_admin_section", section=section, group=panel[6:]) + "#" + panel
         return redirect(destination, code=303)

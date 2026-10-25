@@ -26,6 +26,8 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+from serviceops_core.service_status import published_service_health, employee_service_notices
 
 import app as core
 from serviceops_core.identity import normalize_email
@@ -218,7 +220,7 @@ def register(app):
                                           "title": getattr(record, "title", None) or vote.gate.chain.name,
                                           "step": vote.gate.name})
         return render_template(
-            "dashboard.html", counts=counts, open_count=open_count, recent=recent, waiting_approvals=waiting_approvals,
+            "dashboard.html", **employee_service_context(), counts=counts, open_count=open_count, recent=recent, waiting_approvals=waiting_approvals,
             show_recent=show_recent, show_my_assigned=show_my_assigned, show_sla_widgets=show_sla_widgets,
             sla_at_risk_hours=sla_at_risk_hours,
             my_assigned=my_assigned, incident_priority_counts=incident_priority_counts,
@@ -1087,9 +1089,37 @@ def register(app):
             {"active": active, "url": url, "label": label},
         ))
 
+    def employee_service_context(notice_page=1):
+        """Shared employee services, independent of the operational role."""
+        service_health = None
+        try:
+            services, states = published_service_health(current_user.tenant_id)
+            affected = [service for service in services if states[service.id]['state'] != 'operational']
+            affected.sort(key=lambda service: (0 if states[service.id]['state'] == 'outage' else 1,
+                                              service.name.casefold(), service.id))
+            service_health = {'total': len(services), 'affected': len(affected),
+                              'services': affected[:3], 'all_services': services, 'states': states}
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.exception('Unable to load employee service overview')
+            service_health = None
+        notices = None
+        try:
+            notices = employee_service_notices(current_user, page=notice_page)
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.exception('Unable to load employee service notices')
+        return {'service_health': service_health, 'service_notices': notices,
+                'hr_team': core.workspace_team(current_user.tenant_id, 'hr')}
+
+    @app.get('/service-status')
+    @login_required
+    def employee_service_status():
+        return render_template('employee_service_status.html', **employee_service_context(
+            request.args.get('page', 1, type=int)))
+
     def requester_home():
-        """An employee's home: her own incidents and requests, what waits on
-        her, and the three things she comes here to do."""
+        """An employee's personal incidents, requests and shared service overview."""
         mine = Ticket.query.filter(Ticket.tenant_id == current_user.tenant_id, Ticket.kind == "incident",
                                    Ticket.requester_id == current_user.id, Ticket.deleted_at.is_(None))
         open_incidents = mine.filter(Ticket.state.notin_(FINISHED_TICKET_STATES)).order_by(Ticket.updated_at.desc()).all()
@@ -1102,7 +1132,7 @@ def register(app):
             EnterpriseRecord.state.notin_(("Closed", "Completed", "Cancelled", "Resolved", "Rejected")),
         ).order_by(EnterpriseRecord.updated_at.desc()).limit(10).all()
         return render_template("requester_home.html", open_incidents=open_incidents, waiting=waiting, cases=cases,
-                               hr_team=core.workspace_team(current_user.tenant_id, "hr"),
+                               **employee_service_context(),
                                resolved=resolved, requests=requests,
                                open_requests=[r for r in requests if r.state not in FINISHED_REQUEST_STATES])
 

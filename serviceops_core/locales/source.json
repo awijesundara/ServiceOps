@@ -284,6 +284,9 @@
    "id": "A service outage is in progress"
   },
   {
+   "id": "A service with that name already exists."
+  },
+  {
    "id": "A small activity label appears while the assistant works and disappears when the answer is ready. Private model reasoning is not shown. It drafts advice for your review and makes no operational changes."
   },
   {
@@ -628,6 +631,9 @@
    "id": "Active users were seen in the last 15 minutes."
   },
   {
+   "id": "Active window"
+  },
+  {
    "id": "Activity"
   },
   {
@@ -769,6 +775,9 @@
   },
   {
    "id": "Add condition"
+  },
+  {
+   "id": "Add configuration items"
   },
   {
    "id": "Add contact"
@@ -1138,6 +1147,9 @@
    "id": "All roles"
   },
   {
+   "id": "All services operational"
+  },
+  {
    "id": "All sources"
   },
   {
@@ -1302,6 +1314,9 @@
    "id": "Appearance and accessibility preferences for your account."
   },
   {
+   "id": "Appearance preferences"
+  },
+  {
    "id": "Append-only, request-correlated security and record activity."
   },
   {
@@ -1360,6 +1375,10 @@
   },
   {
    "id": "Apply checked draft changes atomically"
+  },
+  {
+   "id": "Apply dates",
+   "javascript": true
   },
   {
    "id": "Apply filters"
@@ -1796,6 +1815,9 @@
    "id": "Back to CMDB"
   },
   {
+   "id": "Back to Home"
+  },
+  {
    "id": "Back to analytics"
   },
   {
@@ -1973,6 +1995,9 @@
    "id": "Bronze Silver Gold"
   },
   {
+   "id": "Browse all services"
+  },
+  {
    "id": "Browse all sprints and history"
   },
   {
@@ -2084,6 +2109,12 @@
    "javascript": true
   },
   {
+   "id": "CI relationship saved."
+  },
+  {
+   "id": "CIs: {count}"
+  },
+  {
    "id": "CIs: {names}"
   },
   {
@@ -2156,7 +2187,13 @@
    "id": "CUSTOMER SUPPORT"
   },
   {
+   "id": "Calculated from the primary and affected CIs and their current service mappings."
+  },
+  {
    "id": "Calendar"
+  },
+  {
+   "id": "Calendar and date windows"
   },
   {
    "id": "Calendar date"
@@ -2344,6 +2381,9 @@
    "id": "Change at most {count} work items at once."
   },
   {
+   "id": "Change freeze"
+  },
+  {
    "id": "Change freeze \"{title}\" created. Standard/Normal changes cannot be scheduled inside it."
   },
   {
@@ -2417,6 +2457,9 @@
   },
   {
    "id": "Changes"
+  },
+  {
+   "id": "Changes affecting these CIs automatically list this service as impacted. Use Primary for the main CI and Supporting for other related CIs."
   },
   {
    "id": "Changes apply to your account on every device."
@@ -2623,6 +2666,10 @@
    "id": "Choose a valid backlog page."
   },
   {
+   "id": "Choose a valid date and time within the allowed window.",
+   "javascript": true
+  },
+  {
    "id": "Choose a valid destination sprint."
   },
   {
@@ -2726,6 +2773,18 @@
   },
   {
    "id": "Choose count, points, estimate or remaining as the report unit."
+  },
+  {
+   "id": "Choose date",
+   "javascript": true
+  },
+  {
+   "id": "Choose date window",
+   "javascript": true
+  },
+  {
+   "id": "Choose dates",
+   "javascript": true
   },
   {
    "id": "Choose dates between 1900 and 2200.",
@@ -2850,6 +2909,10 @@
   },
   {
    "id": "Clear all recorded error log entries visible to this tenant? This cannot be undone."
+  },
+  {
+   "id": "Clear dates",
+   "javascript": true
   },
   {
    "id": "Clear error log"
@@ -3138,9 +3201,6 @@
    "id": "Configuration items and the dependencies that connect business services."
   },
   {
-   "id": "Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk. Toggle a service to publish or hide it on the"
-  },
-  {
    "id": "Configure"
   },
   {
@@ -3330,6 +3390,9 @@
   },
   {
    "id": "Contracts"
+  },
+  {
+   "id": "Controls share standard, compact and touch sizes. Panels, gaps, focus indicators and responsive layouts use the same design tokens."
   },
   {
    "id": "Conversation"
@@ -3530,6 +3593,9 @@
    "id": "Create a saved project filter"
   },
   {
+   "id": "Create a service, choose the CIs it uses, and keep its owning team up to date."
+  },
+  {
    "id": "Create a tour"
   },
   {
@@ -3633,6 +3699,9 @@
   },
   {
    "id": "Create schedule"
+  },
+  {
+   "id": "Create service offering"
   },
   {
    "id": "Create source"
@@ -3755,6 +3824,12 @@
   },
   {
    "id": "Current reporter created {created_at}; last report {seen}."
+  },
+  {
+   "id": "Current service health"
+  },
+  {
+   "id": "Current service health, change freezes and planned work for the next 14 days."
   },
   {
    "id": "Current stage"
@@ -4714,7 +4789,12 @@
    "id": "End ({zone})"
   },
   {
-   "id": "End time"
+   "id": "End date",
+   "javascript": true
+  },
+  {
+   "id": "End time",
+   "javascript": true
   },
   {
    "id": "Ends ({zone})"
@@ -4742,6 +4822,9 @@
   },
   {
    "id": "Enter a search term."
+  },
+  {
+   "id": "Enter a service name."
   },
   {
    "id": "Enter a syslog hostname or IP address without a URL or path."
@@ -5366,10 +5449,16 @@
    "javascript": true
   },
   {
+   "id": "Freeze"
+  },
+  {
    "id": "Freeze end must be later than its start."
   },
   {
    "id": "Freeze title, start and end are required."
+  },
+  {
+   "id": "Freezes and planned work"
   },
   {
    "id": "From"
@@ -5685,7 +5774,7 @@
    "id": "Hide archived"
   },
   {
-   "id": "Hide from the public status page"
+   "id": "Hide from public status page"
   },
   {
    "id": "High",
@@ -6167,6 +6256,9 @@
    "id": "Interactive app credentials for reading /ack and /escalate replies via Pub/Sub"
   },
   {
+   "id": "Interface standards"
+  },
+  {
    "id": "Interfaces"
   },
   {
@@ -6627,6 +6719,9 @@
    "id": "Latest result"
   },
   {
+   "id": "Layout and accessibility"
+  },
+  {
    "id": "Lead"
   },
   {
@@ -6721,7 +6816,7 @@
    "id": "Link change"
   },
   {
-   "id": "Link impacted services"
+   "id": "Link impacted CIs"
   },
   {
    "id": "Link problem"
@@ -7055,6 +7150,9 @@
    "id": "Manually created"
   },
   {
+   "id": "Manually linked impacted CIs"
+  },
+  {
    "id": "Many models"
   },
   {
@@ -7291,7 +7389,8 @@
    "id": "Monitoring sources"
   },
   {
-   "id": "Month"
+   "id": "Month",
+   "javascript": true
   },
   {
    "id": "Monthly project calendar"
@@ -7649,6 +7748,9 @@
    "id": "New rule"
   },
   {
+   "id": "New service"
+  },
+  {
    "id": "New status"
   },
   {
@@ -7692,7 +7794,17 @@
    "javascript": true
   },
   {
+   "id": "Next 14 days"
+  },
+  {
    "id": "Next approver: {manager_chain}"
+  },
+  {
+   "id": "Next month",
+   "javascript": true
+  },
+  {
+   "id": "Next page"
   },
   {
    "id": "Next run"
@@ -7712,6 +7824,9 @@
   },
   {
    "id": "No CIs linked to this request item."
+  },
+  {
+   "id": "No CIs linked yet. Add the infrastructure this service uses so changes can identify its impact."
   },
   {
    "id": "No IP or hostname to resolve.",
@@ -7737,6 +7852,9 @@
   },
   {
    "id": "No active legal holds."
+  },
+  {
+   "id": "No active or upcoming freezes or visible planned service work in the next 14 days."
   },
   {
    "id": "No active service commitments."
@@ -7843,9 +7961,6 @@
   },
   {
    "id": "No components yet"
-  },
-  {
-   "id": "No configuration items linked yet."
   },
   {
    "id": "No configuration items or services are linked yet."
@@ -7958,9 +8073,6 @@
    "id": "No hosts responded."
   },
   {
-   "id": "No impacted services linked."
-  },
-  {
    "id": "No import jobs queued yet."
   },
   {
@@ -8016,6 +8128,9 @@
   },
   {
    "id": "No manager (top of chart)"
+  },
+  {
+   "id": "No manually linked impacted CIs."
   },
   {
    "id": "No matches found.",
@@ -8119,6 +8234,9 @@
   },
   {
    "id": "No outages recorded"
+  },
+  {
+   "id": "No owning team"
   },
   {
    "id": "No pending results to review"
@@ -8231,7 +8349,19 @@
    "javascript": true
   },
   {
-   "id": "No service offerings configured."
+   "id": "No service offerings mapped to the primary or affected CIs."
+  },
+  {
+   "id": "No services are available in this category."
+  },
+  {
+   "id": "No services match your search."
+  },
+  {
+   "id": "No services published yet"
+  },
+  {
+   "id": "No services yet. Create your first service above."
   },
   {
    "id": "No sessions recorded."
@@ -8424,9 +8554,6 @@
    "id": "Not mapped to any business service yet. Add it under Administration → Service configuration → Service offerings."
   },
   {
-   "id": "Not on status page"
-  },
-  {
    "id": "Not provided"
   },
   {
@@ -8452,7 +8579,8 @@
    "id": "Not scheduled"
   },
   {
-   "id": "Not selected"
+   "id": "Not selected",
+   "javascript": true
   },
   {
    "id": "Not sensitive"
@@ -8559,6 +8687,9 @@
    "id": "Notice period"
   },
   {
+   "id": "Notice {number} of {total}"
+  },
+  {
    "id": "Notification"
   },
   {
@@ -8639,9 +8770,6 @@
   },
   {
    "id": "On hold reason"
-  },
-  {
-   "id": "On status page"
   },
   {
    "id": "On track"
@@ -9139,6 +9267,9 @@
    "id": "Outage in progress"
   },
   {
+   "id": "Outage since"
+  },
+  {
    "id": "Outage tracking is not yet modeled in this deployment."
   },
   {
@@ -9549,6 +9680,12 @@
    "id": "Planned end date"
   },
   {
+   "id": "Planned service notices are temporarily unavailable"
+  },
+  {
+   "id": "Planned service work"
+  },
+  {
    "id": "Planned start",
    "javascript": true
   },
@@ -9711,6 +9848,9 @@
    "id": "PostgreSQL user"
   },
   {
+   "id": "Potential service impact; downtime is not confirmed."
+  },
+  {
    "id": "Power"
   },
   {
@@ -9797,6 +9937,13 @@
   },
   {
    "id": "Previous due"
+  },
+  {
+   "id": "Previous month",
+   "javascript": true
+  },
+  {
+   "id": "Previous page"
   },
   {
    "id": "Previous start"
@@ -10141,7 +10288,7 @@
    "id": "Publish"
   },
   {
-   "id": "Publish on the public status page"
+   "id": "Publish on public status page"
   },
   {
    "id": "Publish to status page ({url_for})"
@@ -10159,7 +10306,13 @@
    "id": "Published automation rules"
   },
   {
+   "id": "Published status page"
+  },
+  {
    "id": "Published version"
+  },
+  {
+   "id": "Publishing makes the service name visible on the public status page."
   },
   {
    "id": "Query"
@@ -10631,7 +10784,16 @@
    "id": "Rejected"
   },
   {
+   "id": "Related CIs"
+  },
+  {
    "id": "Related changes"
+  },
+  {
+   "id": "Related configuration items"
+  },
+  {
+   "id": "Related configuration items (optional)"
   },
   {
    "id": "Related incident"
@@ -10651,6 +10813,9 @@
   },
   {
    "id": "Relationship"
+  },
+  {
+   "id": "Relationship for {name}"
   },
   {
    "id": "Relationship removed."
@@ -10866,9 +11031,6 @@
    "id": "Report"
   },
   {
-   "id": "Report an incident"
-  },
-  {
    "id": "Report unit"
   },
   {
@@ -11013,6 +11175,9 @@
   },
   {
    "id": "Required except for Telegram"
+  },
+  {
+   "id": "Required field"
   },
   {
    "id": "Required task"
@@ -11525,6 +11690,12 @@
    "id": "SLA \"at risk\" warning window (hours)"
   },
   {
+   "id": "SLA = Service Level Agreement: the committed time limit for responding to or resolving this ticket. These are approaching that limit but have not breached it yet."
+  },
+  {
+   "id": "SLA = Service Level Agreement: the committed time limit for responding to or resolving this ticket. These have passed their commitment and need escalation."
+  },
+  {
    "id": "SLA at risk"
   },
   {
@@ -11622,6 +11793,9 @@
   },
   {
    "id": "Sample assets as they would appear in the CMDB:"
+  },
+  {
+   "id": "Sample dates. Select a start and end in one calendar; nothing is saved here."
   },
   {
    "id": "Sample devices as they would appear in the CMDB:"
@@ -11756,6 +11930,9 @@
    "id": "Save review"
   },
   {
+   "id": "Save role"
+  },
+  {
    "id": "Save rule"
   },
   {
@@ -11763,6 +11940,9 @@
   },
   {
    "id": "Save service"
+  },
+  {
+   "id": "Save service details"
   },
   {
    "id": "Save source rules"
@@ -11936,6 +12116,9 @@
    "javascript": true
   },
   {
+   "id": "Search CIs by name or serial number…"
+  },
+  {
    "id": "Search INC or RITM…"
   },
   {
@@ -12043,6 +12226,12 @@
    "id": "Search result pages"
   },
   {
+   "id": "Search services"
+  },
+  {
+   "id": "Search services by name…"
+  },
+  {
    "id": "Search the knowledge base"
   },
   {
@@ -12108,6 +12297,10 @@
    "id": "Select a contact"
   },
   {
+   "id": "Select a date, then use Apply dates to confirm.",
+   "javascript": true
+  },
+  {
    "id": "Select a macro…"
   },
   {
@@ -12157,6 +12350,9 @@
   },
   {
    "id": "Select a valid contact type."
+  },
+  {
+   "id": "Select a valid criticality."
   },
   {
    "id": "Select a valid default ticket priority."
@@ -12222,6 +12418,9 @@
    "id": "Select an active manager in this organization."
   },
   {
+   "id": "Select an active owning team."
+  },
+  {
    "id": "Select an active team."
   },
   {
@@ -12229,6 +12428,9 @@
   },
   {
    "id": "Select an operational service offering."
+  },
+  {
+   "id": "Select an owning team"
   },
   {
    "id": "Select at least one child configuration item."
@@ -12246,10 +12448,17 @@
    "id": "Select between 1 and 100 work item keys."
   },
   {
+   "id": "Select both the start and end dates.",
+   "javascript": true
+  },
+  {
    "id": "Select every device"
   },
   {
    "id": "Select filtered"
+  },
+  {
+   "id": "Select one or more CIs now, or add them later. They are saved with the service as Supporting CIs."
   },
   {
    "id": "Select one or more valid API scopes."
@@ -12261,10 +12470,21 @@
    "id": "Select or deselect visible devices"
   },
   {
+   "id": "Select the end date. Use Apply dates to confirm.",
+   "javascript": true
+  },
+  {
    "id": "Select the owning IT team, provide implementation, validation, and backout plans, then follow the team-manager and CCB approval chain."
   },
   {
+   "id": "Select the start date, then select the end date in this calendar.",
+   "javascript": true
+  },
+  {
    "id": "Select valid changes to apply."
+  },
+  {
+   "id": "Select valid configuration items."
   },
   {
    "id": "Select valid executive users."
@@ -12435,7 +12655,25 @@
    "id": "Service configuration"
   },
   {
+   "id": "Service details"
+  },
+  {
+   "id": "Service impact is temporarily unavailable. Please try again."
+  },
+  {
    "id": "Service level agreements"
+  },
+  {
+   "id": "Service name"
+  },
+  {
+   "id": "Service name must contain 1 to 160 characters."
+  },
+  {
+   "id": "Service notices"
+  },
+  {
+   "id": "Service notices pagination"
   },
   {
    "id": "Service offering"
@@ -12456,7 +12694,13 @@
    "id": "Service status"
   },
   {
+   "id": "Service status is temporarily unavailable"
+  },
+  {
    "id": "Service work board"
+  },
+  {
+   "id": "Service {name} saved."
   },
   {
    "id": "ServiceOps"
@@ -12575,6 +12819,12 @@
   },
   {
    "id": "Share with every SysOps member"
+  },
+  {
+   "id": "Shared components and accessible states. Examples below contain sample data."
+  },
+  {
+   "id": "Shared components, layout and accessibility examples"
   },
   {
    "id": "Shared with {count} people in {name}"
@@ -12727,6 +12977,9 @@
   },
   {
    "id": "Simulation input is invalid: {error}"
+  },
+  {
+   "id": "Single date"
   },
   {
    "id": "Single host"
@@ -13043,7 +13296,8 @@
    "id": "Start at /auth/keycloak/mobile/start with code_challenge (S256) and state; the browser returns to serviceops://keycloak with code and state."
   },
   {
-   "id": "Start date"
+   "id": "Start date",
+   "javascript": true
   },
   {
    "id": "Start from a template"
@@ -13067,7 +13321,8 @@
    "id": "Start the sprint to record its baseline and daily chart."
   },
   {
-   "id": "Start time"
+   "id": "Start time",
+   "javascript": true
   },
   {
    "id": "Start with"
@@ -13754,6 +14009,10 @@
    "javascript": true
   },
   {
+   "id": "The calendar is unavailable. You can still type dates or use your browser calendar.",
+   "javascript": true
+  },
+  {
    "id": "The category and subcategory choices offered on the ticket form. Deactivating a category or subcategory removes it from the form without changing tickets that already used it. Picking a subcategory on the ticket form only ever suggests its linked service offering — it never overwrites what the requester already chose."
   },
   {
@@ -13794,6 +14053,10 @@
   },
   {
    "id": "The end date must be on or after the start date."
+  },
+  {
+   "id": "The end must be on or after the start.",
+   "javascript": true
   },
   {
    "id": "The expanded dependency graph is too large."
@@ -14015,6 +14278,12 @@
    "id": "The server rejected the API key."
   },
   {
+   "id": "The service could not be saved. Please try again."
+  },
+  {
+   "id": "The service could not be saved. Refresh and check its name and owning team."
+  },
+  {
    "id": "The service does not know this model or request. Check the model name."
   },
   {
@@ -14112,6 +14381,10 @@
   },
   {
    "id": "These approvers delegated authority to you for an active absence window. You were not notified when the request was first opened; any decision records both identities."
+  },
+  {
+   "id": "These dates are required.",
+   "javascript": true
   },
   {
    "id": "These need escalation now"
@@ -14392,7 +14665,8 @@
    "javascript": true
   },
   {
-   "id": "Time"
+   "id": "Time",
+   "javascript": true
   },
   {
    "id": "Time ago"
@@ -14672,6 +14946,9 @@
    "id": "Unassigned tickets"
   },
   {
+   "id": "Unavailable"
+  },
+  {
    "id": "Under investigation"
   },
   {
@@ -14846,6 +15123,17 @@
    "id": "Updated {value}"
   },
   {
+   "id": "Updates"
+  },
+  {
+   "id": "Updates paused",
+   "javascript": true
+  },
+  {
+   "id": "Updates resumed",
+   "javascript": true
+  },
+  {
    "id": "Upload",
    "javascript": true
   },
@@ -14901,6 +15189,9 @@
    "id": "Use LDAP StartTLS"
   },
   {
+   "id": "Use Left and Right arrow keys on an update to browse notices. Press Space to pause or resume."
+  },
+  {
    "id": "Use Reopen to make other changes."
   },
   {
@@ -14908,6 +15199,12 @@
   },
   {
    "id": "Use StartTLS for ldap:"
+  },
+  {
+   "id": "Use Tab to inspect keyboard focus. Appearance preferences apply to these examples too."
+  },
+  {
+   "id": "Use a clear name employees recognize."
   },
   {
    "id": "Use a custom proxy"
@@ -15198,6 +15495,9 @@
   },
   {
    "id": "View schedule"
+  },
+  {
+   "id": "View service status"
   },
   {
    "id": "View settings"
@@ -15695,6 +15995,10 @@
    "id": "Written after AI investigation, reviewed and posted by {name}"
   },
   {
+   "id": "Year",
+   "javascript": true
+  },
+  {
    "id": "Year-end code freeze"
   },
   {
@@ -16037,6 +16341,9 @@
    "id": "can approve."
   },
   {
+   "id": "carousel"
+  },
+  {
    "id": "change",
    "javascript": true
   },
@@ -16226,6 +16533,9 @@
   },
   {
    "id": "for everything, or"
+  },
+  {
+   "id": "freeze"
   },
   {
    "id": "from"
@@ -16585,9 +16895,6 @@
    "id": "pts"
   },
   {
-   "id": "public status page"
-  },
-  {
    "id": "queued"
   },
   {
@@ -16689,6 +16996,9 @@
   },
   {
    "id": "slack"
+  },
+  {
+   "id": "slide"
   },
   {
    "id": "smtp.example.com"
@@ -16859,6 +17169,9 @@
   },
   {
    "id": "with this status"
+  },
+  {
+   "id": "work"
   },
   {
    "id": "would be created"
@@ -17086,6 +17399,12 @@
    "javascript": true
   },
   {
+   "id": "{count} service affected"
+  },
+  {
+   "id": "{count} services affected"
+  },
+  {
    "id": "{count} source conflicts"
   },
   {
@@ -17146,9 +17465,6 @@
   },
   {
    "id": "{criticality} criticality"
-  },
-  {
-   "id": "{criticality} criticality · {status}"
   },
   {
    "id": "{current} (retired)"
@@ -17231,9 +17547,6 @@
   },
   {
    "id": "{history} events"
-  },
-  {
-   "id": "{impacted_services} linked"
   },
   {
    "id": "{incidents_caused} linked"
@@ -17714,6 +18027,12 @@
   },
   {
    "id": "{role}'s permissions were reset to the ITIL-recommended baseline."
+  },
+  {
+   "id": "{services} services, {cis} manual CIs"
+  },
+  {
+   "id": "{services} services, {cis} manually linked CIs"
   },
   {
    "id": "{siblings} other tasks"

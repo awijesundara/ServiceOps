@@ -7,10 +7,12 @@ to the allowance each has left, and (3) keep scarce, more capable models for wor
 """
 import re
 from dataclasses import dataclass
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from serviceops_models import AICall, db, now
+from sqlalchemy import case, func
+
+from serviceops_models import AICall, AIConnection, db, now
 
 # Google AI Studio free-tier allowances as shown in the project's rate-limit dashboard (2026-09-21):
 # (requests per minute, tokens per minute, requests per day). Google does not expose these through the API, and
@@ -68,14 +70,38 @@ def day_start(zone_name, at):
     return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 
+@dataclass(frozen=True)
+class CallUsage:
+    rpm_used: int
+    tpm_used: int
+    rpd_used: int
+    first_minute_call: datetime | None
+
+
 def recent_calls(tenant_id, at=None):
-    """The last ~26 hours of calls for an organization, grouped by service."""
+    """Exact usage in two queries, returning one aggregate per service.
+
+    Aggregate in the database so busy tenants neither lose calls to a row
+    limit nor load their entire call history into the web/worker process.
+    Each service retains its own provider's local-midnight boundary.
+    """
     at = _aware(at or now())
-    rows = AICall.query.filter(AICall.tenant_id == tenant_id, AICall.started_at >= at - timedelta(hours=26)).limit(20000).all()
-    grouped = {}
-    for row in rows:
-        grouped.setdefault(row.connection_id, []).append(row)
-    return grouped
+    starts = {identifier: day_start(zone or 'UTC', at) for identifier, zone in
+              db.session.query(AIConnection.id, AIConnection.quota_tz).filter(
+                  AIConnection.tenant_id == tenant_id)}
+    if not starts:
+        return {}
+    minute = AICall.started_at >= at - timedelta(seconds=60)
+    today = AICall.started_at >= case(starts, value=AICall.connection_id)
+    rows = db.session.query(
+        AICall.connection_id,
+        func.count(case((minute, 1))),
+        func.coalesce(func.sum(case((minute, AICall.prompt_tokens + AICall.completion_tokens), else_=0)), 0),
+        func.count(case((today, 1))),
+        func.min(case((minute, AICall.started_at))),
+    ).filter(AICall.tenant_id == tenant_id, AICall.connection_id.in_(starts),
+             AICall.started_at >= min(min(starts.values()), at - timedelta(seconds=60))).group_by(AICall.connection_id)
+    return {identifier: CallUsage(rpm, tpm, rpd, first) for identifier, rpm, tpm, rpd, first in rows}
 
 
 @dataclass
@@ -93,11 +119,18 @@ class Headroom:
 def headroom(connection, calls, est_tokens=0, at=None):
     at = _aware(at or now())
     mine = calls.get(connection.id, [])
-    minute = [c for c in mine if _aware(c.started_at) >= at - timedelta(seconds=60)]
     start = day_start(connection.quota_tz or "UTC", at)
-    today = [c for c in mine if _aware(c.started_at) >= start]
-    result = Headroom(rpm_used=len(minute), tpm_used=sum(c.prompt_tokens + c.completion_tokens for c in minute), rpd_used=len(today),
-                      resets_in=int((start + timedelta(days=1) - at).total_seconds()))
+    zone = ZoneInfo(connection.quota_tz if valid_timezone(connection.quota_tz) else 'UTC')
+    reset = (start.astimezone(zone) + timedelta(days=1)).astimezone(timezone.utc)
+    if isinstance(mine, CallUsage):
+        usage = mine
+    else:
+        minute = [c for c in mine if _aware(c.started_at) >= at - timedelta(seconds=60)]
+        usage = CallUsage(len(minute), sum(c.prompt_tokens + c.completion_tokens for c in minute),
+                          sum(_aware(c.started_at) >= start for c in mine),
+                          min((_aware(c.started_at) for c in minute), default=None))
+    result = Headroom(rpm_used=usage.rpm_used, tpm_used=usage.tpm_used, rpd_used=usage.rpd_used,
+                      resets_in=int((reset - at).total_seconds()))
     limits = (connection.rpm_limit, connection.tpm_limit, connection.rpd_limit)
     if all(limit is None for limit in limits):
         return result
@@ -113,12 +146,12 @@ def headroom(connection, calls, est_tokens=0, at=None):
         fractions.append(1 - result.rpm_used / connection.rpm_limit)
         if result.rpm_used >= connection.rpm_limit:
             result.ok, result.reason = False, "minute"
-            result.wait = max(1, int(60 - (at - _aware(min(c.started_at for c in minute))).total_seconds()))
+            result.wait = max(1, int(60 - (at - _aware(usage.first_minute_call)).total_seconds()))
     if not result.reason and connection.tpm_limit is not None:
         fractions.append(1 - (result.tpm_used + est_tokens) / connection.tpm_limit)
         if result.tpm_used + est_tokens > connection.tpm_limit:
             result.ok, result.reason = False, "minute"
-            result.wait = max(1, int(60 - (at - _aware(min(c.started_at for c in minute))).total_seconds())) if minute else 60
+            result.wait = max(1, int(60 - (at - _aware(usage.first_minute_call)).total_seconds())) if usage.first_minute_call else 60
     result.score = max(0.0, min(fractions)) if fractions else 1.0
     return result
 

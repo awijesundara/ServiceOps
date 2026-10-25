@@ -1,0 +1,39 @@
+{% from '_ui.html' import action_card %}
+{% from '_admin_icons.html' import admin_icon %}
+<nav class="requester-actions" aria-label="{{ tr('What do you need?') }}">
+  {{ action_card(url_for('ticket_new', kind='incident'), tr('Get help'), tr('Something is broken or not working'), admin_icon('support', 'requester-action-icon')) }}
+  {{ action_card(url_for('catalog'), tr('Request something'), tr('Equipment, software or access'), admin_icon('cart', 'requester-action-icon')) }}
+  {{ action_card(url_for('knowledge'), tr('Find an answer'), tr('Search the knowledge base'), admin_icon('book', 'requester-action-icon')) }}
+  {% if hr_team %}<a class="requester-action" href="{{ url_for('enterprise_new', domain='hr') }}"><strong>{{ tr('Ask HR') }}</strong><span>{{ tr('Pay, benefits, leave and other HR questions') }}</span></a>{% endif %}
+</nav>
+
+<section class="portal-service-status" aria-labelledby="portal-status-heading">
+  <header><h2 id="portal-status-heading">{{ tr('Service status') }}</h2><span class="portal-status-summary">
+    {% if service_health is none %}{{ tr('Service status is temporarily unavailable') }}
+    {% elif not service_health.total %}{{ tr('No services published yet') }}
+    {% elif service_health.affected %}<i class="portal-status-dot affected" aria-hidden="true"></i>{{ trn(service_health.affected, '{count} service affected', '{count} services affected') }}
+    {% else %}<i class="portal-status-dot" aria-hidden="true"></i>{{ tr('All services operational') }}{% endif %}
+    </span><a href="{{ url_for('employee_service_status') }}">{{ tr('View all') }} <span aria-hidden="true">→</span></a></header>
+  {% set feed_total = (service_health.services|length if service_health else 0) + (service_notices['items']|length if service_notices else 0) %}
+  {% if feed_total %}
+  <div class="service-feed" data-service-feed role="region" aria-roledescription="{{ tr('carousel') }}" aria-label="{{ tr('Service notices') }}" aria-describedby="service-feed-instructions">
+    <span class="service-feed-label">{{ tr('Updates') }}</span>
+    <div class="service-feed-viewport">
+    {% set feed = namespace(index=0) %}
+    {% if service_health %}{% for service in service_health.services %}{% set state=service_health.states[service.id].state %}
+      <div class="service-feed-item" data-service-feed-item data-notice-kind="{{ state }}" role="group" aria-roledescription="{{ tr('slide') }}" aria-label="{{ tr('Notice {number} of {total}', number=feed.index + 1, total=feed_total) }}"{% if feed.index %} hidden{% endif %}>
+        <div class="portal-status-row"><a class="service-headline" href="{{ url_for('employee_service_status') }}"><strong>{{ service.name }}</strong> · {{ tr('Outage') if state == 'outage' else tr('Degraded') }}{% if service_health.states[service.id].since %} · {{ tr('Outage since') }} {{ service_health.states[service.id].since|usertime('%b %d, %H:%M %Z') }}{% endif %}</a></div>
+      </div>{% set feed.index = feed.index + 1 %}
+    {% endfor %}{% endif %}
+    {% if service_notices %}{% for notice in service_notices['items'] %}
+      <div class="service-feed-item" data-service-feed-item data-notice-kind="{{ notice.kind }}" role="group" aria-roledescription="{{ tr('slide') }}" aria-label="{{ tr('Notice {number} of {total}', number=feed.index + 1, total=feed_total) }}"{% if feed.index %} hidden{% endif %}>{% include '_service_notice_headline.html' %}</div>{% set feed.index = feed.index + 1 %}
+    {% endfor %}{% endif %}
+    </div>
+    <span class="visually-hidden" data-service-feed-position>1 / {{ feed_total }}</span>
+    <span class="visually-hidden" id="service-feed-instructions">{{ tr('Use Left and Right arrow keys on an update to browse notices. Press Space to pause or resume.') }}</span>
+    <span class="visually-hidden" role="status" aria-live="polite" data-service-feed-announcement></span>
+  </div>
+  {% endif %}
+  {% if service_notices is none %}<p class="portal-notice-summary">{{ tr('Planned service notices are temporarily unavailable') }}</p>{% endif %}
+</section>
+<script src="{{ url_for('static', filename='service-status-feed.js', v=asset_version) }}" defer></script>

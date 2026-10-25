@@ -1,0 +1,170 @@
+/* Shared control contract. Keep navigation, icon tools, cards and tree toggles
+   under their own component styles; action controls share one geometry. */
+
+
+/* Text actions share geometry, including older unclassed Search/Save controls.
+   Navigation, icon tools and selectable cards retain their component roles. */
+body main :is(.button,.primary,button[type=submit]:not([class]),form button:not([type=button]):not([class]),.list-filter-toggle,.list-filter-add,.list-filter-clear,.columns-picker-toggle){height:auto!important;min-height:var(--control-height)!important;max-width:100%;padding:calc((var(--control-height) - var(--control-line-height) - 2 * var(--border-width))/2) var(--control-padding-inline)!important;border-radius:var(--control-radius)!important;font-size:var(--control-font-size)!important;line-height:var(--control-line-height)!important;font-weight:600!important;box-sizing:border-box;vertical-align:middle}
+body main :is(a.button,a.primary,summary.button){display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}
+body main :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]):not([type=submit]):not([type=button]),select,textarea){min-height:var(--control-height);border:1px solid var(--control-border);border-radius:var(--control-radius);padding:calc((var(--control-height) - var(--control-line-height) - 2 * var(--border-width))/2) var(--field-padding-inline);font-size:var(--control-font-size);line-height:var(--control-line-height);color:var(--ink);background-color:var(--white);box-sizing:border-box}
+body main textarea{height:auto;resize:vertical}
+body main select{padding-inline-end:30px}
+body main .select-enhance input{padding-inline-end:34px}
+body main .select-enhance select{min-height:0}
+body main input:is([type=checkbox],[type=radio]):not(.switch input):not(.theme-option input){width:18px;height:18px;min-width:18px;min-height:18px;margin:0;vertical-align:middle;accent-color:var(--green);cursor:pointer;flex-shrink:0}
+/* Palette cards use visually hidden radios; retain their accessible label. */
+body main .theme-option input{width:1px;height:1px;min-width:0;min-height:0}
+body main :is(button,input,select,textarea):disabled{cursor:not-allowed;opacity:.6}
+body main :is(input,textarea)[readonly]{background-color:var(--bg)}
+body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline:var(--focus-width) solid var(--green);outline-offset:var(--focus-offset)}
+html.theme-dark{--control-border:#8495a6}
+html.theme-dark body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline-color:var(--dk-accent)}
+/* The active location is communicated by shape and color, not font weight. */
+body .project-tabs{gap:4px;border-bottom:2px solid var(--line);padding-top:3px;overflow-x:auto;scroll-padding-inline:12px}
+body .project-tabs a{position:relative;display:inline-flex;align-items:center;min-height:44px;padding:10px 14px;margin-bottom:0;border:0;border-radius:5px 5px 0 0;font-size:14px;font-weight:600;color:var(--muted);text-decoration:none;white-space:nowrap}
+body .project-tabs a:hover{background:var(--bg);color:var(--ink)}
+body .project-tabs a[aria-current=page]{background:var(--brand-teal-soft,#e8f2f4);color:var(--ink)}
+body .project-tabs a[aria-current=page]::after{content:"";position:absolute;inset-inline:8px;bottom:0;height:3px;background:var(--green);border-radius:3px 3px 0 0}
+body .wi-tabs button[aria-selected=true]{background:var(--brand-teal-soft,#e8f2f4);color:var(--ink);border-bottom:3px solid var(--green)}
+html.theme-dark body .project-tabs a[aria-current=page],html.theme-dark body .wi-tabs button[aria-selected=true]{background:var(--surface-subtle,#25343f);color:var(--ink)}
+html.theme-dark body .project-tabs a[aria-current=page]::after{background:var(--dk-accent)}
+html.theme-dark body .wi-tabs button[aria-selected=true]{border-bottom-color:var(--dk-accent)}
+@media(pointer:coarse){body main input:is([type=checkbox],[type=radio]):not(.switch input):not(.theme-option input){width:22px;height:22px;min-width:22px;min-height:22px}body main .theme-option input{width:1px;height:1px;min-width:0;min-height:0}}
+
+/* Single-line fields and adjacent form actions share actual geometry, rather
+   than competing module-specific height and padding combinations. */
+body main :where(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]):not([type=submit]):not([type=button]),select:not([multiple]):not([size]):not(.select-enhance select)){height:var(--control-height)!important;min-height:var(--control-height)!important;font-size:var(--control-font-size)!important;line-height:var(--control-line-height)!important;border-radius:var(--control-radius)!important}
+body main .project-filters .project-filter-search input{padding-inline-start:32px}
+body main :is(.project-filter-actions,.wi-toolbar,.project-head-actions,.record-actions){align-items:center;gap:8px}
+body main :is(.planning-toolbar,.project-filters){column-gap:12px;row-gap:12px;align-items:flex-end}
+body main .planning-toolbar>button{align-self:flex-end}
+body main .wi-toolbar .inline-form{align-items:center;gap:8px;margin:0}
+body main .planning-toolbar label{gap:6px}
+/* Action-link layout must not reveal collapsed or explicitly hidden tools. */
+body main summary.project-filters-toggle{display:none}
+@media (--small){body main summary.project-filters-toggle{display:inline-flex}}
+body main :is(.button,.primary)[hidden]{display:none!important}
+
+body main select[multiple]{height:auto;min-height:112px}
+body main :is(.actions,div.planning-toolbar){align-items:center;gap:8px}
+body main form.actions:has(>label){align-items:flex-end}
+/* Wrap whole heading actions on narrow screens, never their button labels. */
+body main .project-view-heading .actions{display:flex;flex:1 1 auto;justify-content:flex-end;flex-wrap:wrap;min-width:0}
+body main .project-view-heading .actions>button,body main .project-view-heading .actions>details{flex:0 0 auto;white-space:nowrap}
+
+/* Interface system: shared rhythm, frames and action placement. */
+
+body main:not(.auth-main){padding-inline:var(--page-gutter);min-width:0}
+body main :is(.page-head,.section-heading,.panel-head){gap:var(--space-4);align-items:center;flex-wrap:wrap}
+body main .page-head{margin-bottom:var(--space-6)}
+body main .page-head>:first-child{min-width:0}
+body main :is(.section-heading,.panel-head){margin-bottom:var(--space-4)}
+body main .panel{border-radius:var(--surface-radius);padding:var(--panel-padding)}
+body main :is(.list-workspace,.record-shell){margin:0 0 var(--section-gap);border-radius:var(--surface-radius);min-width:0}
+body main :is(.list-toolbar,.record-toolbar){gap:var(--space-3);padding:var(--space-3) var(--space-4);min-height:0;flex-wrap:wrap}
+body main :is(.responsive-card-grid,.module-grid,.article-grid,.catalog-grid,.dashboard-columns)>.panel{margin:0}
+body main :is(.responsive-card-grid,.dashboard-columns){gap:var(--space-4)}
+body main .record-form{padding:var(--panel-padding)}
+body main .record-grid{column-gap:var(--space-6);row-gap:var(--field-gap)}
+body main .record-long-fields{gap:var(--field-gap);margin-top:var(--space-5);padding-top:var(--space-4)}
+body main .form-grid{column-gap:var(--space-6)}
+body main :is(.form-grid,.stack)>label{column-gap:var(--space-3);padding-block:var(--space-2)}
+body main :is(.actions,.record-actions,.record-footer-actions,.inline-actions){gap:var(--space-2);flex-wrap:wrap}
+body main .actions{padding-top:var(--space-4)}
+/* A labelled field may be taller than its control: actions align to the input. */
+body main :is(.inline-form,.list-search,.filter-row){align-items:flex-end;column-gap:var(--space-2);row-gap:var(--space-3)}
+body main :is(.inline-form,.list-search,.filter-row,.actions)>:is(button,.button,.primary){align-self:flex-end;flex-shrink:0}
+body main :is(.inline-form,.list-search,.filter-row,.actions)>:is(button,.button,.primary){align-self:flex-end}
+body main :is(.list-filter,.columns-picker){margin-block:0;align-self:center}
+body main :is(.table-scroll,.task-list-scroll){min-width:0;max-width:100%}
+body main :is(.project-table,.record-list,.task-list) td form>button{white-space:nowrap;min-width:max-content}
+/* Compact tools retain their identity, but never become tiny touch targets. */
+body main :is(.record-back,.lookup-browse){min-width:var(--icon-target);min-height:var(--icon-target);box-sizing:border-box}
+body main .record-back{width:var(--control-height);height:var(--control-height);border-radius:var(--control-radius)}
+body main .lookup-multi{min-height:var(--control-height);padding:0 calc(var(--control-height) + 8px) 0 8px;border-radius:var(--control-radius);gap:var(--space-1)}
+body main .lookup-multi .lookup-search{height:calc(var(--control-height) - 2px)!important;min-height:calc(var(--control-height) - 2px)!important;padding-block:0!important}
+body main .lookup-multi .lookup-browse{width:var(--icon-target);height:var(--icon-target);min-height:var(--icon-target);right:2px;top:50%;bottom:auto;transform:translateY(-50%)}
+body main .preferences-nav button{min-height:44px;padding:12px 16px;font-size:14px;line-height:var(--control-line-height)}
+@media (--tablet){body main .record-grid{column-gap:var(--space-4)}}
+@media (--phone){body main .page-head{gap:var(--space-3);margin-bottom:var(--space-5)}body main :is(.list-toolbar,.record-toolbar){padding:var(--space-3)}body main .form-grid{grid-template-columns:minmax(0,1fr)}body main :is(.inline-form,.list-search){min-width:0;flex-wrap:wrap}body main .inline-form>label{min-width:0;flex:1 1 180px}body main .list-search>input{min-width:0;max-width:100%}}
+@media(pointer:coarse){body{--icon-target:44px}}
+body main .record-shell>.state-track{margin:var(--space-4) var(--panel-padding) 0}
+body main .preferences-nav button{padding-block:11px;box-sizing:border-box}
+@media(pointer:coarse){body main .lookup-multi{min-height:var(--control-height)}body main .lookup-multi .lookup-search{height:calc(var(--control-height) - 2px)!important;min-height:calc(var(--control-height) - 2px)!important}body main .lookup:not(.lookup-multi)>.lookup-browse{top:0;bottom:0;min-height:44px;max-height:44px}}
+body main :is(.responsive-card-grid,.module-grid,.article-grid,.catalog-grid,.dashboard-columns)>.panel{padding:var(--panel-padding);border-radius:var(--surface-radius)}
+body main :is(.requester-actions,.stats,.kpi-trend-grid){gap:var(--space-4)}
+body main :is(.requester-actions,.portal-service-status,.stats){margin-bottom:var(--section-gap)}
+
+body main :is(.stack,.form-grid)>:is(button,.button,.primary){align-self:start;justify-self:start}
+
+/* Reusable composition primitives. */
+.ui-stack{display:flex;flex-direction:column;gap:var(--section-gap)}
+.ui-cluster{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2)}
+.ui-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr));gap:var(--space-4)}
+.ui-field{display:flex;flex-direction:column;gap:var(--space-2)}
+.ui-hint{font-size:var(--font-small);color:var(--muted)}
+.ui-error{color:var(--red)}
+.ui-panel{padding:var(--panel-padding);border:var(--border-width) solid var(--line);border-radius:var(--surface-radius);background:var(--white)}
+.ui-panel h2{font-size:var(--font-section);margin:0 0 var(--space-4)}
+.ui-button{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2)}
+
+/* Composed dashboard sections use the same rhythm as standalone panels. */
+body main .ui-stack>:is(.panel,.dashboard-columns){margin-block:0}
+body main .dashboard-columns{gap:var(--section-gap);margin:0;min-width:0}
+body main .dashboard-columns>.panel{min-width:0}
+body main .panel-head h2{display:flex;align-items:center;flex-wrap:wrap;column-gap:var(--space-2);row-gap:var(--space-1)}
+body main .panel-head h2>.info-tip{margin-inline:0;flex-shrink:0}
+body main .dashboard-columns>.panel:only-child{grid-column:1/-1}
+
+/* One shared calendar dialog for single dates and date windows. */
+.ui-calendar{width:min(var(--calendar-width),calc(100vw - var(--space-6)));max-height:calc(100dvh - var(--space-6));overflow:auto;padding:var(--panel-padding);border:var(--border-width) solid var(--line);border-radius:var(--surface-radius);background:var(--white);color:var(--ink);box-shadow:var(--shadow)}
+.ui-calendar::backdrop{background:rgba(0,0,0,.45)}
+.ui-calendar-head,.ui-calendar-nav{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2)}
+.ui-calendar h2{font-size:var(--font-section);margin:0}
+.ui-calendar p{margin-block:var(--space-3)}
+.ui-calendar button{box-sizing:border-box;min-height:var(--control-height);border:var(--border-width) solid var(--line);border-radius:var(--control-radius);padding:var(--space-2);font:inherit;cursor:pointer}
+.ui-calendar button:disabled{cursor:not-allowed;opacity:.4}
+.ui-calendar :is(button,input,select):focus-visible{outline:var(--focus-width) solid var(--green);outline-offset:var(--focus-offset)}
+.ui-calendar :is(input,select){min-width:0;min-height:var(--control-height);padding:var(--space-2);border:var(--border-width) solid var(--control-border);border-radius:var(--control-radius);background:var(--white);color:var(--ink);font:inherit}
+.ui-calendar-nav{margin-block:var(--space-3)}
+.ui-calendar-nav label{display:grid;gap:var(--space-1);font-size:var(--font-small);min-width:0}
+.ui-calendar-nav select{width:100%}
+.ui-calendar-nav input{width:6em;max-width:100%}
+.ui-calendar-grid{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:2px}
+.ui-calendar-grid :is(th,td){padding:0;text-align:center;border:0}
+.ui-calendar-grid th{font-size:var(--font-small);height:var(--space-6);color:var(--muted);background:transparent;text-transform:none;letter-spacing:normal}
+.ui-calendar-grid td{height:var(--calendar-day-size);background:transparent}
+.ui-calendar-grid button.ui-calendar-day{display:block;width:100%;height:var(--calendar-day-size);min-height:var(--calendar-day-size);padding:0;border-color:transparent;background:transparent;color:var(--ink)}
+.ui-calendar-grid td[aria-selected=true]{background:var(--brand-teal-soft,var(--bg));border-radius:var(--control-radius)}
+.ui-calendar-grid button.selected{background:var(--green);color:var(--on-accent)}
+.ui-calendar-grid button[aria-current=date]{border-color:var(--green)}
+.ui-calendar-stages,.ui-calendar-times{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2);margin-block:var(--space-3)}
+.ui-calendar-stages button{background:var(--bg);color:var(--ink);font-size:var(--font-small)}
+.ui-calendar-stages button[aria-pressed=true]{border-color:var(--green);font-weight:700}
+.ui-calendar-stages[hidden]{display:none}
+.ui-calendar-times label{display:grid;gap:var(--space-1)}
+body main .ui-date-window{grid-column:1/-1;justify-self:start;max-width:100%}
+.ui-date-input::-webkit-calendar-picker-indicator{display:none}
+@media(pointer:coarse){.ui-calendar{--calendar-day-size:44px}}
+@media(max-width:380px){.ui-calendar{padding:var(--space-3)}.ui-calendar-nav{gap:var(--space-1)}.ui-calendar-nav input{width:5em}}
+
+/* Compact two-line service status and rolling updates (selected preview B). */
+body main .portal-service-status>header{padding:var(--space-2) var(--space-4);min-height:42px;box-sizing:border-box;gap:var(--space-3)}
+body main .portal-service-status>header h2{font-size:var(--control-font-size)}
+.service-feed{display:flex;align-items:center;gap:var(--space-3);border-top:var(--border-width) solid var(--line);padding:var(--space-1) var(--space-4);min-height:var(--notice-strip-height);box-sizing:border-box;min-width:0;background:var(--bg)}
+.service-feed-label{flex-shrink:0;font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--green);background:var(--brand-teal-soft,var(--white));padding:var(--space-1) var(--space-2);border-radius:var(--control-radius)}
+.service-feed-viewport{flex:1;min-width:0;overflow:hidden;height:var(--control-line-height)}
+.service-feed-item{min-width:0;height:var(--control-line-height);line-height:var(--control-line-height);font-size:var(--font-small)}
+.service-feed-item[hidden]{display:none!important}
+.service-feed-item .portal-status-row{display:block;border:0;padding:0;height:var(--control-line-height);font-size:inherit;min-width:0}
+.service-feed-item a.service-headline{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:var(--control-line-height);color:var(--ink);text-decoration:none}
+.service-feed-item a.service-headline:hover{text-decoration:underline}
+.service-feed-item a.service-headline:focus-visible{outline:var(--focus-width) solid var(--green);outline-offset:-2px}
+.service-feed-item a.service-headline strong{font-weight:700}
+.service-feed-enter{animation:service-feed-up var(--motion-normal) ease-out}
+@keyframes service-feed-up{from{transform:translateY(var(--control-line-height));opacity:0}to{transform:translateY(0);opacity:1}}
+@media(max-width:700px){.service-feed{gap:var(--space-2);padding-inline:var(--space-3)}.service-feed-label{padding-inline:var(--space-1);font-size:10px}}
+@media(prefers-reduced-motion:reduce){.service-feed-enter{animation:none}}
+.reduced-motion .service-feed-enter{animation:none}
+
+.ui-calendar button.ui-calendar-apply{background:var(--green);color:var(--on-accent);border-color:var(--green)}

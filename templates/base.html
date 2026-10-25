@@ -33,6 +33,7 @@
   {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=asset_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='client-management.css', v=asset_version) }}">
   {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=asset_version) }}">{% endif %}
+  <script src="{{ url_for('static', filename='calendar.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='platform.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='lookup.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='select-enhance.js', v=asset_version) }}" defer></script>
@@ -61,7 +62,7 @@
 {% from '_admin_icons.html' import admin_icon %}
 <a class="skip-link" href="#main-content">{{ tr('Skip to main content') }}</a>
 {% if current_user.is_authenticated %}
-{% set admin_endpoints = ['admin_home','admin_section','itil_admin','approval_policies_admin','incident_handling_admin','workspace_teams_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
+{% set admin_endpoints = ['admin_home','interface_standards','admin_section','itil_admin','approval_policies_admin','incident_handling_admin','workspace_teams_admin','system_settings_category','users','user_new','user_edit','admin_sessions','audit_log','api_clients_admin','integrations_admin','workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin','data_governance_admin','platform_tenants','system_health','system_health_log_file','admin_access','admin_roles','cmdb_permissions'] %}
 <script src="{{ url_for('static', filename='nav-init.js', v=asset_version) }}"></script>
 {% if test_fixture_active %}<div class="test-fixture-banner">{{ tr('NON-PRODUCTION TEST DATA · Temporary accounts and weak passwords are active') }}</div>{% endif %}
 <aside class="sidebar">

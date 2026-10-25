@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}{{ tr('Service status') }} · {{ instance_name }}{% endblock %}
+{% block content %}
+<header class="page-head"><div><p class="eyebrow">{{ tr('SERVICE OPERATIONS') }}</p><h1>{{ tr('Service status') }}</h1><p>{{ tr('Current service health, change freezes and planned work for the next 14 days.') }}</p></div><a href="{{ url_for('dashboard') }}">{{ tr('Back to Home') }}</a></header>
+<section class="portal-service-status" aria-labelledby="current-service-status"><header><h2 id="current-service-status">{{ tr('Current service health') }}</h2><a href="{{ url_for('status_page', slug=current_tenant_slug) }}">{{ tr('Published status page') }} →</a></header>
+{% if service_health is none %}<p class="portal-notice-summary">{{ tr('Service status is temporarily unavailable') }}</p>
+{% elif not service_health.total %}<p class="portal-notice-summary">{{ tr('No services published yet') }}</p>
+{% else %}{% for service in service_health.all_services %}{% set state=service_health.states[service.id].state %}
+<div class="portal-status-row"><span>{{ service.name }}{% if service_health.states[service.id].since %}<small class="service-outage-since">{{ tr('Outage since') }} {{ service_health.states[service.id].since|usertime('%b %d, %H:%M %Z') }}</small>{% endif %}</span><span><i class="portal-status-dot {{ state }}" aria-hidden="true"></i>{{ tr('Outage') if state == 'outage' else tr('Degraded') if state == 'degraded' else tr('Operational') }}</span></div>
+{% endfor %}{% endif %}</section>
+<section class="portal-service-status" aria-labelledby="planned-notices-heading"><header><h2 id="planned-notices-heading">{{ tr('Freezes and planned work') }}</h2><span class="muted">{{ tr('Next 14 days') }}</span></header>
+{% if service_notices is none %}<p class="portal-notice-summary">{{ tr('Planned service notices are temporarily unavailable') }}</p>
+{% elif not service_notices.total %}<p class="portal-notice-summary">{{ tr('No active or upcoming freezes or visible planned service work in the next 14 days.') }}</p>
+{% else %}{% for notice in service_notices['items'] %}{% include '_service_notice_row.html' %}{% endfor %}
+{% if service_notices.pages > 1 %}<nav class="service-notice-pagination" aria-label="{{ tr('Service notices pagination') }}">
+{% if service_notices.page > 1 %}<a href="{{ url_for('employee_service_status', page=service_notices.page - 1) }}">{{ tr('Previous page') }}</a>{% endif %}
+<span>{{ tr('Page {page} of {pages}', page=service_notices.page, pages=service_notices.pages) }}</span>
+{% if service_notices.page < service_notices.pages %}<a href="{{ url_for('employee_service_status', page=service_notices.page + 1) }}">{{ tr('Next page') }}</a>{% endif %}
+</nav>{% endif %}{% endif %}</section>
+{% endblock %}

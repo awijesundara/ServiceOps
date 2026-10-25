@@ -364,35 +364,72 @@
 {% endif %}
 
 {% if section == 'service-offerings' %}
-<section class="panel admin-section">
-    <p class="muted">{{ tr('Configuration items realizing each service — used for impact analysis (what breaks if this CI goes down) and blast-radius-aware change risk. Toggle a service to publish or hide it on the') }} <a href="{{ url_for('status_page', slug=current_tenant_slug) }}" target="_blank" rel="noopener">{{ tr('public status page') }}</a>.</p>
-    {% for service in services %}
-    <article class="config-row u-stack-8">
-      <div class="u-row-between">
-        <div><strong>{{ service.name }}</strong><small>{{ tr('{criticality} criticality · {status}', criticality=(service.criticality), status=(tr_value(service.status))) }}</small></div>
-        <div class="u-row-center-10">
-          <span>{{ user_link(service.owner) }}</span>
-          <form method="post" action="{{ post_url }}" class="inline-form">
-    <input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="action" value="toggle_service_status_page_visibility"><input type="hidden" name="service_offering_id" value="{{ service.id }}"><button class="badge u-plain-button" title="{{ tr('Hide from the public status page') if service.status_page_visible else tr('Publish on the public status page') }}">{{ ('● ' ~ tr('On status page')) if service.status_page_visible else ('○ ' ~ tr('Not on status page')) }}</button></form>
-        </div>
+{% macro service_fields(service=none) %}
+  <label><span>{{ tr('Service name') }}</span><input name="name" maxlength="160" value="{{ service.name if service else '' }}" required></label>
+  <label><span>{{ tr('Owning team') }}</span><select name="support_group_id" data-searchable aria-label="{{ tr('Owning team') }}" required>
+    <option value="">{{ tr('Select an owning team') }}</option>
+    {% for group in groups if group in fulfillment_groups or (service and service.support_group_id == group.id) %}<option value="{{ group.id }}" {% if service and service.support_group_id == group.id %}selected{% endif %}>{{ group.name }}{% if not group.active %} · {{ tr('Inactive') }}{% endif %}</option>{% endfor %}
+  </select></label>
+  <label><span>{{ tr('Criticality') }}</span><select name="criticality" aria-label="{{ tr('Criticality') }}" required>
+    {% for value in ['Critical','High','Medium','Low'] %}<option value="{{ value }}" {% if (service and service.criticality == value) or (not service and value == 'Medium') %}selected{% endif %}>{{ tr_value(value) }}</option>{% endfor %}
+  </select></label>
+{% endmacro %}
+<section class="panel admin-section service-workspace">
+  <div class="service-toolbar">
+    <div><h2>{{ tr('Services') }}</h2><p class="muted">{{ tr('Create a service, choose the CIs it uses, and keep its owning team up to date.') }}</p></div>
+    <form method="get" class="inline-form" role="search">
+      <label><span>{{ tr('Search services') }}</span><input type="search" name="q" value="{{ service_search }}" placeholder="{{ tr('Search services by name…') }}"></label>
+      <button class="button">{{ tr('Search') }}</button>{% if service_search %}<a class="button" href="{{ url_for('itil_admin_section', section=section) }}">{{ tr('Clear') }}</a>{% endif %}
+    </form>
+  </div>
+  <details id="new-service" class="service-editor service-create" {% if not services or request.args.get('new') %}open{% endif %}>
+    <summary>{{ tr('New service') }}</summary>
+    <form method="post" action="{{ post_url }}" class="form-grid">
+      <input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="action" value="create_service_offering">
+      {{ service_fields() }}
+      <div class="wide"><label for="new-service-cis">{{ tr('Related configuration items (optional)') }}</label>
+        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id"><div class="lookup-chips"></div><input id="new-service-cis" type="text" class="lookup-search" aria-label="{{ tr('Related configuration items (optional)') }}" placeholder="{{ tr('Search CIs by name or serial number…') }}" autocomplete="off"><div class="lookup-results" hidden></div></div>
+      <p class="muted">{{ tr('Select one or more CIs now, or add them later. They are saved with the service as Supporting CIs.') }}</p></div>
+      <div class="wide actions"><button class="primary">{{ tr('Create service offering') }}</button></div>
+    </form>
+  </details>
+  <p class="muted">{{ tr('Services') }} ({{ services|length }})</p>
+  {% for service in services %}
+  {% set links = [] %}{% for link in service.ci_links if link.tenant_id == current_user.tenant_id and link.ci and link.ci.tenant_id == current_user.tenant_id %}{% set _ = links.append(link) %}{% endfor %}
+  <article class="service-record">
+    <details class="service-editor" id="service-{{ service.id }}" {% if selected_service_id == service.id %}open{% endif %}>
+      <summary><span class="service-summary"><strong>{{ service.name }}</strong><span class="muted">{{ service.support_group.name if service.support_group else tr('No owning team') }}</span><span>{{ tr('CIs: {count}', count=links|length) }} · {{ tr_value(service.criticality) }}</span></span></summary>
+      <div class="service-editor-body">
+        <h3>{{ tr('Service details') }}</h3>
+        <form method="post" action="{{ post_url }}" class="form-grid">
+          <input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="action" value="update_service_offering"><input type="hidden" name="service_offering_id" value="{{ service.id }}">
+          {{ service_fields(service) }}
+          <div class="wide actions"><button class="primary">{{ tr('Save service details') }}</button></div>
+        </form>
+        <h3>{{ tr('Related configuration items') }} ({{ links|length }})</h3>
+        <p class="muted">{{ tr('Changes affecting these CIs automatically list this service as impacted. Use Primary for the main CI and Supporting for other related CIs.') }}</p>
+        {% if links %}<div class="task-list-scroll"><table><thead><tr><th>{{ tr('Configuration item') }}</th><th>{{ tr('Class') }}</th><th>{{ tr('Relationship') }}</th><th>{{ tr('Actions') }}</th></tr></thead><tbody>
+          {% for link in links %}<tr><td data-label="{{ tr('Configuration item') }}">{{ link.ci.name }}</td><td data-label="{{ tr('Class') }}">{{ link.ci.ci_class }}</td><td data-label="{{ tr('Relationship') }}">
+            <form method="post" action="{{ post_url }}" class="inline-form">
+              <input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="return_panel" value="service-{{ service.id }}"><input type="hidden" name="action" value="update_service_ci_role"><input type="hidden" name="link_id" value="{{ link.id }}">
+              <select name="relationship_role" aria-label="{{ tr('Relationship for {name}', name=link.ci.name) }}"><option value="Primary" {% if link.relationship_role == 'Primary' %}selected{% endif %}>{{ tr('Primary') }}</option><option value="Supporting" {% if link.relationship_role == 'Supporting' %}selected{% endif %}>{{ tr('Supporting') }}</option></select><button class="button">{{ tr('Save role') }}</button>
+            </form></td><td data-label="{{ tr('Actions') }}"><form method="post" action="{{ post_url }}">
+              <input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="return_panel" value="service-{{ service.id }}"><input type="hidden" name="action" value="unlink_service_ci"><input type="hidden" name="link_id" value="{{ link.id }}"><button class="button" aria-label="{{ tr('Unlink {name}', name=link.ci.name) }}">{{ tr('Remove') }}</button>
+            </form></td></tr>{% endfor %}
+        </tbody></table></div>{% else %}<p class="callout">{{ tr('No CIs linked yet. Add the infrastructure this service uses so changes can identify its impact.') }}</p>{% endif %}
+        <form method="post" action="{{ post_url }}" class="service-add-cis">
+          <input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="return_panel" value="service-{{ service.id }}"><input type="hidden" name="action" value="link_service_ci"><input type="hidden" name="service_offering_id" value="{{ service.id }}">
+          <div><label for="service-cis-{{ service.id }}">{{ tr('Add configuration items') }}</label><div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input id="service-cis-{{ service.id }}" type="text" class="lookup-search" aria-label="{{ tr('Add configuration items') }}" placeholder="{{ tr('Search CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div></div>
+          <label><span>{{ tr('Relationship') }}</span><select name="relationship_role"><option value="Supporting">{{ tr('Supporting') }}</option><option value="Primary">{{ tr('Primary') }}</option></select></label><button class="button">{{ tr('Link CIs') }}</button>
+        </form>
+        <details class="service-public-settings"><summary>{{ tr('Public status page') }}</summary>
+          <p class="muted">{{ tr('Publishing makes the service name visible on the public status page.') }}</p>
+          <form method="post" action="{{ post_url }}"><input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="return_panel" value="service-{{ service.id }}"><input type="hidden" name="action" value="toggle_service_status_page_visibility"><input type="hidden" name="service_offering_id" value="{{ service.id }}"><button class="button">{{ tr('Hide from public status page') if service.status_page_visible else tr('Publish on public status page') }}</button></form>
+        </details>
       </div>
-      {% for link in service.ci_links %}
-      <div class="sla-row"><div><strong>{{ link.ci.name }}</strong><small>{{ link.ci.ci_class }} · {{ link.ci.environment }}</small></div>
-        <span class="badge">{{ tr_value(link.relationship_role) }}</span>
-        <form method="post" action="{{ post_url }}" class="inline-form">
-    <input type="hidden" name="return_section" value="{{ section }}"><input type="hidden" name="action" value="unlink_service_ci"><input type="hidden" name="link_id" value="{{ link.id }}"><button class="link-button" aria-label="{{ tr('Unlink {name}', name=(link.ci.name)) }}">✕</button></form>
-      </div>
-      {% else %}<p class="muted">{{ tr('No configuration items linked yet.') }}</p>{% endfor %}
-      <form method="post" action="{{ post_url }}" class="inline-form">
-    <input type="hidden" name="return_section" value="{{ section }}">
-        <input type="hidden" name="action" value="link_service_ci">
-        <input type="hidden" name="service_offering_id" value="{{ service.id }}">
-        <select name="relationship_role"><option value="Primary">{{ tr('Primary') }}</option><option value="Supporting" selected>{{ tr('Supporting') }}</option></select>
-        <div class="lookup" data-lookup-url="{{ url_for('lookup_cis') }}" data-multi-name="ci_id" data-required><div class="lookup-chips"></div><input type="text" class="lookup-search" placeholder="{{ tr('Pick CIs by name or serial number…') }}" autocomplete="off" required><div class="lookup-results" hidden></div></div>
-        <button>{{ tr('Link CIs') }}</button>
-      </form>
-    </article>
-    {% else %}<p>{{ tr('No service offerings configured.') }}</p>{% endfor %}
+    </details>
+  </article>
+  {% else %}<p>{{ tr('No services match your search.') if service_search else tr('No services yet. Create your first service above.') }}</p>{% endfor %}
 </section>
 {% endif %}
 

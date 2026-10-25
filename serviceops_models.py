@@ -2131,8 +2131,9 @@ class ApprovalVote(db.Model):
 
 class ServiceOffering(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(160), unique=True, nullable=False)
-    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    # Historical individual ownership is retained; operational ownership uses the team.
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     support_group_id = db.Column(db.Integer, db.ForeignKey("support_group.id"))
     criticality = db.Column(db.String(20), nullable=False, default="Medium")
     status = db.Column(db.String(30), nullable=False, default="Operational")
@@ -2143,6 +2144,9 @@ class ServiceOffering(db.Model):
     owner = db.relationship("User")
     support_group = db.relationship("SupportGroup")
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    __table_args__ = (
+        db.UniqueConstraint("tenant_id", "name", name="uq_service_offering_tenant_name"),
+    )
 
 
 class TicketCategory(db.Model):

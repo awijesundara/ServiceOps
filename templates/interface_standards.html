@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% from '_ui.html' import button, panel, field %}
+{% block content %}
+<div class="page-head"><div><h1>{{ tr('Interface standards') }}</h1><p>{{ tr('Shared components and accessible states. Examples below contain sample data.') }}</p></div>{{ button(tr('Administration'), url_for('admin_home')) }}</div>
+<div class="ui-grid">
+{% call panel(tr('Actions')) %}<div class="ui-cluster">{{ button(tr('View service status'), url_for('employee_service_status'), primary=true) }}{{ button(tr('Find an answer'), url_for('knowledge')) }}{{ button(tr('Unavailable'), disabled=true) }}</div>{% endcall %}
+{% call panel(tr('Fields')) %}<div class="ui-stack">
+{% call field('sample-name', tr('Service name'), hint=tr('Use a clear name employees recognize.')) %}<input id="sample-name" value="Email and calendar" aria-describedby="sample-name-hint">{% endcall %}
+{% call field('sample-status', tr('Status')) %}<select id="sample-status"><option>{{ tr('Operational') }}</option><option>{{ tr('Degraded') }}</option></select>{% endcall %}
+{% call field('sample-readonly', tr('Read only')) %}<input id="sample-readonly" value="Sample service" readonly>{% endcall %}
+{% call field('sample-error', tr('Required field'), error=tr('Enter a service name.')) %}<input id="sample-error" aria-invalid="true" aria-describedby="sample-error-error">{% endcall %}
+</div>{% endcall %}
+{% call panel(tr('Layout and accessibility')) %}<p>{{ tr('Controls share standard, compact and touch sizes. Panels, gaps, focus indicators and responsive layouts use the same design tokens.') }}</p><p>{{ tr('Use Tab to inspect keyboard focus. Appearance preferences apply to these examples too.') }}</p>{{ button(tr('Appearance preferences'), url_for('preferences')) }}{% endcall %}
+{% call panel(tr('Calendar and date windows')) %}
+<p>{{ tr('Sample dates. Select a start and end in one calendar; nothing is saved here.') }}</p>
+<form method="get" action="{{ url_for('interface_standards') }}" class="ui-stack">
+<label>{{ tr('Start date') }}<input type="date" name="start_date" min="2020-01-01" max="2099-12-31"></label>
+<label>{{ tr('End date') }}<input type="date" name="due_date" min="2020-01-01" max="2099-12-31"></label>
+</form>
+<label>{{ tr('Single date') }}<input type="date" name="sample_date"></label>
+{% endcall %}
+</div>
+{% endblock %}

@@ -218,6 +218,7 @@ VALUES = (
     translatable('Forbidden'),
     translatable('Forward application logs to syslog'),
     translatable('Forward logs at or above'),
+    translatable('Freeze'),
     translatable('Fulfillment'),
     translatable('Gate state'),
     translatable('Get a visible ticket'),
@@ -689,6 +690,7 @@ VALUES = (
     translatable('edit'),
     translatable('email'),
     translatable('fact'),
+    translatable('freeze'),
     translatable('group'),
     translatable('iOS bundle identifier'),
     translatable('iOS push notification proxy'),
@@ -777,4 +779,5 @@ VALUES = (
     translatable('uuid'),
     translatable('watch'),
     translatable('webhook'),
+    translatable('work'),
 )

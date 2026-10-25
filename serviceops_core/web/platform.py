@@ -26,6 +26,7 @@ from app import (
     env_bool,
     service_availability_pct,
 )
+from serviceops_core.service_status import published_service_health
 from serviceops_core.input_limits import reject_nul_characters
 from serviceops_core import realtime  # noqa: F401 - registers the LISTEN/NOTIFY signal hooks
 from serviceops_core.web.common import _recovery_set_status
@@ -37,8 +38,6 @@ from serviceops_models import (
     now,
     PlatformSetting,
     RequestMetricTotal,
-    ServiceOffering,
-    ServiceOutage,
     Tenant,
     Ticket,
     User,
@@ -122,23 +121,9 @@ def register(app):
         tenant = Tenant.query.filter_by(slug=slug, active=True).first()
         if not tenant:
             abort(404)
-        services = ServiceOffering.query.filter_by(
-            tenant_id=tenant.id, status_page_visible=True,
-        ).order_by(ServiceOffering.name).all()
-        service_states = {}
+        services, service_states = published_service_health(tenant.id)
         for service in services:
-            open_outage = ServiceOutage.query.filter_by(
-                service_offering_id=service.id, ended_at=None,
-            ).first()
-            if open_outage:
-                state = "outage"
-            elif service.status != "Operational":
-                state = "degraded"
-            else:
-                state = "operational"
-            service_states[service.id] = {
-                "state": state, "uptime_pct": service_availability_pct(service.id),
-            }
+            service_states[service.id]['uptime_pct'] = service_availability_pct(service.id)
         overall_state = (
             "outage" if any(row["state"] == "outage" for row in service_states.values())
             else "degraded" if any(row["state"] == "degraded" for row in service_states.values())
@@ -277,7 +262,7 @@ def register(app):
             abort(404)
         configured_token = os.getenv("METRICS_TOKEN", "").strip()
         supplied_token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        if configured_token and not hmac.compare_digest(configured_token, supplied_token):
+        if configured_token and not hmac.compare_digest(configured_token.encode('utf-8'), supplied_token.encode('utf-8')):
             abort(401)
         if not configured_token and not _direct_private_scrape():
             # Without a token, only a scraper on the private network that

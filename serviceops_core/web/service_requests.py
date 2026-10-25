@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import HTTPException
 
@@ -111,9 +112,13 @@ def register(app):
     @app.get("/catalog")
     @login_required
     def catalog(kept=None):
+        category = request.args.get('category', '').strip()
+        items_query = tenant_query(CatalogItem).filter_by(active=True)
+        if category:
+            items_query = items_query.filter(func.lower(CatalogItem.category) == category.lower())
         return render_template(
-            "catalog.html",
-            items=tenant_query(CatalogItem).filter_by(active=True).options(
+            "catalog.html", category=category,
+            items=items_query.options(
                 selectinload(CatalogItem.fulfillment_route).selectinload(CatalogItemRouting.support_group),
             ).order_by(CatalogItem.category, CatalogItem.name).all(),
             kept=kept or {},

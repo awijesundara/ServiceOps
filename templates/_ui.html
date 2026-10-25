@@ -1,0 +1,11 @@
+{# Shared interface primitives. Business routes and authorization remain with callers. #}
+{% macro button(label, href=none, primary=false, type='button', disabled=false) -%}
+{% if href and not disabled %}<a class="ui-button {{ 'primary' if primary else 'button' }}" href="{{ href }}">{{ label }}</a>{% else %}<button class="ui-button {{ 'primary' if primary else 'button' }}" type="{{ type if type in ['button','submit','reset'] else 'button' }}"{% if disabled %} disabled{% endif %}>{{ label }}</button>{% endif %}
+{%- endmacro %}
+{% macro panel(title) -%}<section class="ui-panel"><h2>{{ title }}</h2>{{ caller() }}</section>{%- endmacro %}
+{% macro field(id, label, hint='', error='') -%}
+<div class="ui-field"><label for="{{ id }}">{{ label }}</label>{{ caller() }}{% if hint %}<small class="ui-hint" id="{{ id }}-hint">{{ hint }}</small>{% endif %}{% if error %}<small class="ui-error" id="{{ id }}-error">{{ error }}</small>{% endif %}</div>
+{%- endmacro %}
+{% macro action_card(href, title, description, icon=none) -%}
+<a class="requester-action" href="{{ href }}"><strong>{% if icon %}{{ icon }}{% endif %}{{ title }}</strong><span>{{ description }}</span></a>
+{%- endmacro %}

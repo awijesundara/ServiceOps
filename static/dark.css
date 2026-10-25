@@ -26,7 +26,9 @@ html.theme-dark .sign-out-button{border:1px solid #33424e;background:none;color:
 html.theme-dark .sign-out-button:hover{background:#263440;color:#fff;border-color:#455460}
 html.theme-dark .page-head p{color:var(--muted)}
 html.theme-dark .eyebrow{color:var(--dk-accent-strong)!important}
-html.theme-dark .primary,html.theme-dark .button,html.theme-dark button{border:1px solid var(--line);background:#182128;color:var(--ink)}
+html.theme-dark .primary{border:1px solid var(--line);background:#182128;color:var(--ink)}
+html.theme-dark .button{border:1px solid var(--line);background:#182128;color:var(--ink)}
+html.theme-dark button{border:1px solid var(--line);background:#182128;color:var(--ink)}
 html.theme-dark .primary{background:var(--green);border-color:var(--dk-accent);color:#fff}
 html.theme-dark .primary:hover{background:var(--green-dark)}
 html.theme-dark .stats>*{background:#182128;border:1px solid var(--line);color:inherit;box-shadow:var(--shadow)}
@@ -283,6 +285,18 @@ html.theme-dark .stat-warn{border-color:#c98a12;background:#1d170b}
 html.theme-dark .stat-warn::before{background:#c98a12!important}
 html.theme-dark .stat-warn .stat-alert-text{color:#ce9a53!important}
 html.theme-dark .workspace-team-note{color:var(--muted)}
+html.theme-dark .portal-service-status{border:1px solid var(--line);background:var(--white)}
+html.theme-dark .portal-status-dot{background:#168050}
+html.theme-dark .portal-status-dot.affected,html.theme-dark .portal-status-dot.degraded{background:#b77700}
+html.theme-dark .portal-status-dot.outage{background:#c0392b}
+html.theme-dark .portal-status-row{border-top:1px solid var(--line)}
+html.theme-dark .catalog-item:target{outline:2px solid var(--dk-accent)}
+html.theme-dark .requester-action-icon{fill:none;stroke:currentColor}
+html.theme-dark .service-notice-row{border-top:1px solid var(--line)}
+html.theme-dark .service-notice-row time{color:var(--muted)}
+html.theme-dark .service-notice-row small{color:var(--muted)}
+html.theme-dark .portal-notice-summary{color:var(--muted)}
+html.theme-dark .service-outage-since{color:var(--muted)}
 /* enterprise.css */
 html.theme-dark .module-card{color:inherit}
 html.theme-dark .module-card:hover{border-color:#365750}
@@ -517,6 +531,7 @@ html.theme-dark .rt-link-status[data-kind=ok]{color:var(--dk-accent-strong)}
 html.theme-dark .record-grid .record-field{color:#a1b4bc}
 html.theme-dark .linked-work-items li{border-bottom:1px solid #292f33}
 html.theme-dark .linked-work-items li:last-child{border-bottom:0}
+html.theme-dark .approval-workspace .pending-box article:last-child{border-bottom:0}
 /* platform.css */
 html.theme-dark .unified-nav{background:#182128;border-bottom:1px solid var(--line)}
 html.theme-dark .nav-toggle,html.theme-dark .nav-icon{border:0;background:transparent}
@@ -888,7 +903,12 @@ html.theme-dark .theme-swatch-system i:first-child{background:linear-gradient(13
 html.theme-dark .theme-swatch-system i:last-child{background:linear-gradient(135deg,var(--sw-lc) 50%,var(--sw-dc) 50%);box-shadow:none}
 html.theme-dark .admin-save-feedback{box-shadow:var(--shadow)}
 html.theme-dark .approval-policy{border:1px solid var(--line)}
-/* notification-audiences.css */
+html.theme-dark .service-editor{border:1px solid var(--line)}
+html.theme-dark .service-editor[open]>summary{border-bottom:1px solid var(--line)}
+@media(max-width:700px){html.theme-dark .service-workspace tr{border:1px solid var(--line)}
+html.theme-dark .service-workspace td{border:0}
+html.theme-dark .service-workspace td::before{color:var(--muted)}
+}/* notification-audiences.css */
 html.theme-dark .personal-channel{border-bottom:1px solid var(--line)}
 html.theme-dark .personal-channel small{color:var(--muted)}
 html.theme-dark .personal-channel-add{border:1px solid var(--line)}
@@ -1513,7 +1533,7 @@ html.theme-dark .dash-empty-icon{background:var(--brand-teal-soft,#191e23);color
 html.theme-dark body main :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]):not([type=submit]):not([type=button]),select,textarea){border:1px solid var(--control-border);color:var(--ink);background-color:var(--white)}
 html.theme-dark body main input:is([type=checkbox],[type=radio]):not(.switch input):not(.theme-option input){accent-color:var(--dk-accent)}
 html.theme-dark body main :is(input,textarea)[readonly]{background-color:var(--bg)}
-html.theme-dark body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline:3px solid var(--dk-accent)}
+html.theme-dark body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
 html.theme-dark.theme-dark body main :is(button,input,select,textarea,a.button,summary.button):focus-visible{outline-color:var(--dk-accent)}
 html.theme-dark body .project-tabs{border-bottom:2px solid var(--line)}
 html.theme-dark body .project-tabs a{border:0;color:var(--muted)}
@@ -1524,6 +1544,29 @@ html.theme-dark body .wi-tabs button[aria-selected=true]{background:var(--brand-
 html.theme-dark.theme-dark body .project-tabs a[aria-current=page],html.theme-dark.theme-dark body .wi-tabs button[aria-selected=true]{background:var(--surface-subtle,#25343f);color:var(--ink)}
 html.theme-dark.theme-dark body .project-tabs a[aria-current=page]::after{background:var(--dk-accent)}
 html.theme-dark.theme-dark body .wi-tabs button[aria-selected=true]{border-bottom-color:var(--dk-accent)}
+html.theme-dark .ui-hint{color:var(--muted)}
+html.theme-dark .ui-error{color:var(--red)}
+html.theme-dark .ui-panel{border:var(--border-width) solid var(--line);background:var(--white)}
+html.theme-dark .ui-calendar{border:var(--border-width) solid var(--line);background:var(--white);color:var(--ink);box-shadow:var(--shadow)}
+html.theme-dark .ui-calendar::backdrop{background:rgba(255,255,255,0.45)}
+html.theme-dark .ui-calendar button{border:var(--border-width) solid var(--line)}
+html.theme-dark .ui-calendar :is(button,input,select):focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
+html.theme-dark .ui-calendar :is(input,select){border:var(--border-width) solid var(--control-border);background:var(--white);color:var(--ink)}
+html.theme-dark .ui-calendar-grid :is(th,td){border:0}
+html.theme-dark .ui-calendar-grid th{color:var(--muted);background:transparent}
+html.theme-dark .ui-calendar-grid td{background:transparent}
+html.theme-dark .ui-calendar-grid button.ui-calendar-day{border-color:transparent;background:transparent;color:var(--ink)}
+html.theme-dark .ui-calendar-grid td[aria-selected=true]{background:var(--brand-teal-soft,var(--bg))}
+html.theme-dark .ui-calendar-grid button.selected{background:var(--green);color:var(--on-accent)}
+html.theme-dark .ui-calendar-grid button[aria-current=date]{border-color:var(--dk-accent)}
+html.theme-dark .ui-calendar-stages button{background:var(--bg);color:var(--ink)}
+html.theme-dark .ui-calendar-stages button[aria-pressed=true]{border-color:var(--dk-accent)}
+html.theme-dark .service-feed{border-top:var(--border-width) solid var(--line);background:var(--bg)}
+html.theme-dark .service-feed-label{color:var(--dk-accent);background:var(--brand-teal-soft,var(--white))}
+html.theme-dark .service-feed-item .portal-status-row{border:0}
+html.theme-dark .service-feed-item a.service-headline{color:var(--ink)}
+html.theme-dark .service-feed-item a.service-headline:focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
+html.theme-dark .ui-calendar button.ui-calendar-apply{background:var(--green);color:var(--on-accent);border-color:var(--dk-accent)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

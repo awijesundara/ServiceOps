@@ -2,12 +2,7 @@
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ tr('SUPPORT') }}</p><h1>{{ tr('Good day, {name}', name=(current_user.name.split(' ')[0])) }}</h1><p>{{ tr('Your incidents and requests, and help when you need it.') }}</p></div></header>
 
-<nav class="requester-actions" aria-label="{{ tr('What do you need?') }}">
-  <a class="requester-action" href="{{ url_for('ticket_new', kind='incident') }}"><strong>{{ tr('Get help') }}</strong><span>{{ tr('Something is broken or not working') }}</span></a>
-  <a class="requester-action" href="{{ url_for('catalog') }}"><strong>{{ tr('Request something') }}</strong><span>{{ tr('Equipment, software or access') }}</span></a>
-  <a class="requester-action" href="{{ url_for('knowledge') }}"><strong>{{ tr('Find an answer') }}</strong><span>{{ tr('Search the knowledge base') }}</span></a>
-  {% if hr_team %}<a class="requester-action" href="{{ url_for('enterprise_new', domain='hr') }}"><strong>{{ tr('Ask HR') }}</strong><span>{{ tr('Pay, benefits, leave and other HR questions') }}</span></a>{% endif %}
-</nav>
+{% include '_employee_service_overview.html' %}
 
 {% if waiting %}
 <section class="caller-waiting" role="status"><strong>{{ trn(waiting|length, 'The support team is waiting for your reply on {count} incident.', 'The support team is waiting for your reply on {count} incidents.') }}</strong>

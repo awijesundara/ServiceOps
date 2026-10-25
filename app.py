@@ -7686,7 +7686,7 @@ def create_app(test_config=None):
             return None
         expected = session.get("_csrf_token")
         supplied = request.headers.get("X-CSRF-Token") or request.form.get("_csrf_token")
-        if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        if not expected or not supplied or not supplied.isascii() or not hmac.compare_digest(expected, supplied):
             abort(400, description=(
                 tr("The security token is missing or expired. Refresh the page and try again.")
             ))
