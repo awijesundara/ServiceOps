@@ -2474,7 +2474,7 @@ def process_outbox(limit=50):
                         outbox_event_id=event.id, channel="apns", state="Failed",
                         error=str(error)[:1000], tenant_id=event.tenant_id,
                     ))
-        if setting_bool("WEB_PUSH_ENABLED") and event.event_type == "notification.created":
+        if setting_bool("WEB_PUSH_ENABLED", True) and event.event_type == "notification.created":
             prior = IntegrationDelivery.query.filter_by(
                 outbox_event_id=event.id, channel="webpush",
             ).filter(IntegrationDelivery.state.in_(["Delivered", "Skipped"])).first()
