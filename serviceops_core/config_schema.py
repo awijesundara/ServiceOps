@@ -175,7 +175,7 @@ SETTING_DEFINITIONS = {
         {"key": "APNS_BUNDLE_ID", "label": "iOS bundle identifier", "type": "text", "default": "wijesundara.com.ServiceOps", "live": True},
         {"key": "APNS_PRIVATE_KEY", "label": "APNs private key", "type": "secret", "default": "", "live": True},
         *proxy_policy_settings("APNS", "iOS push notification"),
-        {"key": "WEB_PUSH_ENABLED", "label": "Enable browser desktop notifications (Web Push)", "type": "bool", "default": "false", "live": True},
+        {"key": "WEB_PUSH_ENABLED", "label": "Enable browser desktop notifications (Web Push)", "type": "bool", "default": "true", "live": True},
         {"key": "WEB_PUSH_CONTACT", "label": "Web Push contact email (shared with browser push services)", "type": "email", "default": "", "live": True},
         *proxy_policy_settings("WEB_PUSH", "browser push notification"),
         {"key": "SMTP_PORT", "label": "SMTP port", "type": "int", "default": "587", "min": 1, "max": 65535, "live": True},

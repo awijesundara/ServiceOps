@@ -968,10 +968,16 @@ document.addEventListener("DOMContentLoaded", () => {
 /* Preferences: desktop notifications (Web Push) for this browser. */
 (function () {
   const row = document.querySelector("[data-web-push]");
-  if (!row || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
+  if (!row) return;
   const button = row.querySelector("[data-web-push-toggle]");
   const csrfHeaders = {"X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || ""};
   const status = row.querySelector("[data-web-push-status]");
+  // Say why the switch is unavailable instead of leaving it dead or hiding it.
+  const unavailable = message => { status.textContent = message; button.disabled = true; };
+  if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    unavailable(tr("This browser does not support desktop notifications. On iPhone or iPad, add ServiceOps to the Home Screen first."));
+    return;
+  }
   const toKey = text => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - text.length % 4) % 4)), c => c.charCodeAt(0));
   let config = null;
   async function current() {
@@ -1018,10 +1024,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
   fetch("/push/config", {headers: {Accept: "application/json"}}).then(r => r.ok ? r.json() : null).then(data => {
-    if (!data?.enabled || !data.public_key) return;
+    if (!data) {
+      unavailable(tr("Desktop notifications could not be checked. Reload the page to try again."));
+      return;
+    }
+    if (!data.enabled || !data.public_key) {
+      unavailable(tr("Desktop notifications are turned off for your organization."));
+      const adminHint = row.querySelector("[data-web-push-admin]");
+      if (adminHint) adminHint.hidden = false;
+      return;
+    }
     config = data;
-    row.hidden = false;
+    button.disabled = false;
     button.addEventListener("click", toggle);
     render();
-  }).catch(() => {});
+  }).catch(() => unavailable(tr("Desktop notifications could not be checked. Reload the page to try again.")));
 })();

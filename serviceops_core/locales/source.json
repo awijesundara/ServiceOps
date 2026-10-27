@@ -4356,6 +4356,14 @@
    "javascript": true
   },
   {
+   "id": "Desktop notifications are turned off for your organization.",
+   "javascript": true
+  },
+  {
+   "id": "Desktop notifications could not be checked. Reload the page to try again.",
+   "javascript": true
+  },
+  {
    "id": "Desktop notifications on this browser"
   },
   {
@@ -14486,6 +14494,10 @@
    "javascript": true
   },
   {
+   "id": "This browser does not support desktop notifications. On iPhone or iPad, add ServiceOps to the Home Screen first.",
+   "javascript": true
+  },
+  {
    "id": "This browser's push service is not supported."
   },
   {
@@ -14902,6 +14914,9 @@
   {
    "id": "Turn on",
    "javascript": true
+  },
+  {
+   "id": "Turn on browser desktop notifications in Email delivery settings"
   },
   {
    "id": "Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products."

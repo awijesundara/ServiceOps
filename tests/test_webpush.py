@@ -81,10 +81,10 @@ def test_only_browser_push_services_are_accepted(endpoint, allowed):
     assert webpush.endpoint_allowed(endpoint) is allowed
 
 
-def _enable(app):
+def _enable(app, value="true"):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
-        db.session.merge(PlatformSetting(key="WEB_PUSH_ENABLED", value="true", tenant_id=admin.tenant_id))
+        db.session.merge(PlatformSetting(key="WEB_PUSH_ENABLED", value=value, tenant_id=admin.tenant_id))
         db.session.commit()
 
 
@@ -96,6 +96,7 @@ def _subscription_json():
 
 
 def test_subscriptions_need_web_push_enabled_and_valid_input(app, client):
+    _enable(app, "false")  # on by default; an administrator can turn it off
     login(client)
     _, body = _subscription_json()
     assert client.get("/push/config").get_json() == {"enabled": False, "public_key": None}
@@ -158,3 +159,21 @@ def test_the_outbox_delivers_encrypted_web_push_and_drops_gone_browsers(app, cli
         db.session.commit()
         process_outbox()
         assert WebPushSubscription.query.count() == 0  # the browser unsubscribed
+
+
+def test_desktop_notifications_are_on_by_default(client, app):
+    login(client)
+    config = client.get("/push/config").get_json()
+    assert config["enabled"] is True and config["public_key"]
+
+
+def test_preferences_explain_when_desktop_notifications_are_off(client, app):
+    _enable(app, "false")
+    login(client)
+    html = client.get("/preferences").get_data(as_text=True)
+    # Visible (not hidden) so the reason can be shown; administrators get the setting link.
+    assert '<div class="preference-row" data-web-push>' in html
+    assert "data-web-push-admin" in html and "/admin/settings/email_delivery" in html
+    assert client.get("/push/config").get_json() == {"enabled": False, "public_key": None}
+    login(client, "employee", "Employee123!")
+    assert "data-web-push-admin" not in client.get("/preferences").get_data(as_text=True)

@@ -6,7 +6,7 @@ aes128gcm payload encryption (RFC 8291 / RFC 8188). The payload reaches the
 browser vendor's push service (Google, Mozilla, Apple, Microsoft) encrypted
 end to end; only the browser can read it.
 
-Off unless an administrator sets WEB_PUSH_ENABLED. The VAPID key pair is
+On by default (WEB_PUSH_ENABLED; administrators can turn it off). The VAPID key pair is
 created on first use and stored encrypted like other secrets.
 """
 import base64
@@ -121,7 +121,7 @@ def deliver(event):
     import httpx
     import app as core
     from serviceops_models import WebPushSubscription, db, now, settings_cipher
-    if event.event_type != "notification.created" or not core.setting_bool("WEB_PUSH_ENABLED"):
+    if event.event_type != "notification.created" or not core.setting_bool("WEB_PUSH_ENABLED", True):
         return 0
     payload = event.payload
     subscriptions = WebPushSubscription.query.filter_by(
@@ -139,7 +139,12 @@ def deliver(event):
         "tag": f"notification-{payload.get('notification_id')}",
     }).encode()
     contact = core.setting_value("WEB_PUSH_CONTACT", "") or core.setting_value("SUPPORT_EMAIL", "")
-    contact = contact if contact.startswith(("mailto:", "https:")) else f"mailto:{contact or 'admin@localhost'}"
+    if not contact:
+        # Push services (Apple's in particular) reject a placeholder subject; the
+        # public https address identifies this server when no email is configured.
+        origin = public_origin() or ""
+        contact = origin if origin.startswith("https:") else "mailto:admin@localhost"
+    contact = contact if contact.startswith(("mailto:", "https:")) else f"mailto:{contact}"
     key = _vapid_private_key()
     delivered, failures = 0, []
     proxy_url = core.resolve_component_proxy_url("WEB_PUSH") if hasattr(core, "resolve_component_proxy_url") else None

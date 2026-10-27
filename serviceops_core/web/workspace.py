@@ -583,7 +583,7 @@ def register(app):
         """Whether desktop notifications are available, and the key the
         browser subscribes with."""
         from serviceops_core import webpush
-        enabled = core.setting_bool("WEB_PUSH_ENABLED")
+        enabled = core.setting_bool("WEB_PUSH_ENABLED", True)
         key = webpush.public_key() if enabled else None
         db.session.commit()  # the key pair is created on first use
         return jsonify({"enabled": enabled, "public_key": key})
@@ -594,7 +594,7 @@ def register(app):
         import hashlib
         from serviceops_core import webpush
         from serviceops_models import WebPushSubscription
-        if not core.setting_bool("WEB_PUSH_ENABLED"):
+        if not core.setting_bool("WEB_PUSH_ENABLED", True):
             abort(404)
         body = request.get_json(silent=True) or {}
         endpoint = str(body.get("endpoint") or "")
