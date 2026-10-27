@@ -185,3 +185,16 @@ def test_the_server_key_is_never_replaced_once_created(app):
         db.session.commit()
         # A second worker that missed the cached value still gets the stored key.
         assert webpush.public_key() == first
+
+
+def test_test_notification_needs_a_subscription_and_queues_one(client, app):
+    from app import Notification
+    login(client)
+    assert client.post("/push/test").status_code == 409
+    _, body = _subscription_json()
+    assert client.post("/push/subscriptions", json=body).status_code == 201
+    assert client.post("/push/test").status_code == 202
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        assert Notification.query.filter_by(user_id=admin.id, title="Test notification").count() == 1
+        assert OutboxEvent.query.filter_by(event_type="notification.created").count() >= 1

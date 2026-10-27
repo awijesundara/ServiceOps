@@ -972,6 +972,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const button = row.querySelector("[data-web-push-toggle]");
   const csrfHeaders = {"X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || ""};
   const status = row.querySelector("[data-web-push-status]");
+  const testButton = row.querySelector("[data-web-push-test]");
   // Say why the switch is unavailable instead of leaving it dead or hiding it.
   const unavailable = message => { status.textContent = message; button.disabled = true; };
   if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
@@ -998,6 +999,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function render() {
     const subscription = await current();
     button.textContent = subscription ? tr("Turn off") : tr("Turn on");
+    if (testButton) testButton.hidden = !subscription;
     button.dataset.on = subscription ? "1" : "";
     if (Notification.permission === "denied") {
       status.textContent = tr("This browser blocks notifications for ServiceOps. Allow them in the browser's site settings.");
@@ -1062,6 +1064,18 @@ document.addEventListener("DOMContentLoaded", () => {
     config = data;
     button.disabled = false;
     button.addEventListener("click", toggle);
+    testButton?.addEventListener("click", async () => {
+      testButton.disabled = true;
+      try {
+        const response = await fetch("/push/test", {method: "POST", headers: csrfHeaders});
+        const detail = await response.json().catch(() => ({}));
+        showToast(response.ok
+          ? tr("Test notification sent. It appears on this computer within a few seconds, even with ServiceOps in the background.")
+          : (detail.error?.detail || detail.description || tr("Could not send a test notification.")), response.ok ? "success" : "error");
+      } finally {
+        testButton.disabled = false;
+      }
+    });
     render();
   }).catch(() => unavailable(tr("Desktop notifications could not be checked. Reload the page to try again.")));
 })();

@@ -3538,6 +3538,10 @@
    "javascript": true
   },
   {
+   "id": "Could not send a test notification.",
+   "javascript": true
+  },
+  {
    "id": "Could not turn on desktop notifications.",
    "javascript": true
   },
@@ -4362,6 +4366,9 @@
   {
    "id": "Desktop notifications are turned off for your organization.",
    "javascript": true
+  },
+  {
+   "id": "Desktop notifications are working on this computer. Click to open your notification inbox."
   },
   {
    "id": "Desktop notifications could not be checked. Reload the page to try again.",
@@ -12563,6 +12570,9 @@
    "id": "Send"
   },
   {
+   "id": "Send a test notification"
+  },
+  {
    "id": "Send recovery instructions"
   },
   {
@@ -13899,7 +13909,14 @@
    "id": "Test failed: {error}"
   },
   {
+   "id": "Test notification"
+  },
+  {
    "id": "Test notification delivered successfully."
+  },
+  {
+   "id": "Test notification sent. It appears on this computer within a few seconds, even with ServiceOps in the background.",
+   "javascript": true
   },
   {
    "id": "Test plan",
@@ -14833,6 +14850,9 @@
    "id": "Too many sign-in attempts. Try again later."
   },
   {
+   "id": "Too many test notifications. Wait a minute and try again."
+  },
+  {
    "id": "Too many verification attempts. Please wait a moment and try again."
   },
   {
@@ -14929,6 +14949,9 @@
   },
   {
    "id": "Turn on browser desktop notifications in Email delivery settings"
+  },
+  {
+   "id": "Turn on desktop notifications for this browser first."
   },
   {
    "id": "Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products."

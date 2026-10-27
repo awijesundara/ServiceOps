@@ -634,6 +634,27 @@ def register(app):
         db.session.commit()
         return jsonify({"removed": bool(removed)})
 
+    @app.post("/push/test")
+    @login_required
+    def web_push_test():
+        """Send the signed-in user a notification so they can see desktop delivery work."""
+        from serviceops_models import WebPushSubscription
+        if not core.setting_bool("WEB_PUSH_ENABLED", True):
+            abort(404)
+        if not WebPushSubscription.query.filter_by(user_id=current_user.id).first():
+            abort(409, description=tr("Turn on desktop notifications for this browser first."))
+        if not core.route_rate_limit("push-test", f"user:{current_user.id}", 5):
+            db.session.commit()
+            abort(429, description=tr("Too many test notifications. Wait a minute and try again."))
+        core.create_notification(
+            current_user.id, tr("Test notification"),
+            tr("Desktop notifications are working on this computer. Click to open your notification inbox."),
+            tenant_id=current_user.tenant_id,
+        )
+        audit("notify", current_user.username, "desktop notification test")
+        db.session.commit()
+        return jsonify({"queued": True}), 202
+
     @app.get("/notifications")
     @login_required
     def notifications():
