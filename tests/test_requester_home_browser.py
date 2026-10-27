@@ -123,8 +123,7 @@ def test_requester_home_browser(app,width,theme,username):
                 expect(page.locator('.service-feed')).to_have_count(0)
                 expect(page.locator('.service-feed-label')).to_have_count(0)
                 expect(page.locator('[data-service-feed-controls]')).to_have_count(0)
-                expect(page.locator('.portal-status-summary')).to_contain_text('All services operational')
-                assert page.locator('.portal-service-status').bounding_box()['height']<70
+                expect(page.locator('.portal-service-status')).to_have_count(0)
 
             assert not errors,errors
             browser.close()

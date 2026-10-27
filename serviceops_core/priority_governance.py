@@ -15,8 +15,12 @@ PRIORITIES = ("P1", "P2", "P3", "P4")
 MIN_OVERRIDE_REASON = 10
 
 
-def check_governed_priority(actor, *, impact, urgency, priority=None, reason=None):
-    """Validate without touching a ticket; returns (calculated, requested). Aborts 400/403."""
+def check_governed_priority(actor, *, impact, urgency, priority=None, reason=None, overridden=False):
+    """Validate without touching a ticket; returns (calculated, requested). Aborts 400/403.
+
+    ``overridden`` says the ticket already carries a manager override: removing
+    it (by landing on the calculated priority) needs the same authority as setting it.
+    """
     import app as core
 
     try:
@@ -26,6 +30,8 @@ def check_governed_priority(actor, *, impact, urgency, priority=None, reason=Non
     requested = calculated if priority is None else str(priority)
     if requested not in PRIORITIES:
         abort(400, description=tr("priority must be P1, P2, P3 or P4."))
+    if overridden and requested == calculated and not core.role_at_least(actor.effective_role, "manager"):
+        abort(403, description=tr("Only a manager or administrator may clear a priority override."))
     if requested != calculated:
         if not core.role_at_least(actor.effective_role, "manager"):
             abort(403, description=tr(
@@ -48,7 +54,8 @@ def apply_governed_priority(ticket, actor, *, impact=None, urgency=None, priorit
     impact = ticket.impact if impact is None else str(impact)
     urgency = ticket.urgency if urgency is None else str(urgency)
     calculated, requested = check_governed_priority(actor, impact=impact, urgency=urgency,
-                                                    priority=priority, reason=reason)
+                                                    priority=priority, reason=reason,
+                                                    overridden=bool(ticket.priority_overridden))
     reason = (reason or "").strip()
     previous_reason = ticket.priority_override_reason
     if requested != calculated:
@@ -66,5 +73,8 @@ def apply_governed_priority(ticket, actor, *, impact=None, urgency=None, priorit
                              previous_reason or "None", "None", details=f"Cleared via {source}.")
         ticket.priority_overridden = False
         ticket.priority_override_reason = None
+    previous_priority = ticket.priority
     ticket.impact, ticket.urgency, ticket.priority = impact, urgency, requested
+    if ticket.id and requested != previous_priority:
+        core.retarget_slas("ticket", ticket.id, requested, ticket.state)
     return requested

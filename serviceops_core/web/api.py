@@ -1135,6 +1135,11 @@ def register(app):
             or not hmac.compare_digest(source.token_hash, token_hash)
         ):
             abort(401, description=tr("The monitoring token is invalid or revoked."))
+        # The backup status is platform-wide (tenant 1 owns platform settings), so only the
+        # platform's own backup reporter may set it, not any tenant's monitoring source.
+        from serviceops_core.web.administration import BACKUP_REPORTER_NAME
+        if source.tenant_id != 1 or source.name != BACKUP_REPORTER_NAME:
+            abort(403, description=tr("Only the platform backup reporter can report backups."))
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             abort(400, description=tr("A JSON object is required."))
@@ -1276,6 +1281,8 @@ def register(app):
         rows = FileAttachment.query.filter_by(
             ticket_id=ticket.id, tenant_id=ticket.tenant_id,
         ).order_by(FileAttachment.created_at, FileAttachment.id).all()
+        # The same visibility as downloads: work-note attachments stay hidden from requesters.
+        rows = core.visible_attachments(rows, g.api_user)
         return jsonify({
             "data": [api_attachment_document(row, ticket.number) for row in rows],
             "meta": {"count": len(rows), "request_id": g.request_id},
@@ -1463,6 +1470,18 @@ def register(app):
             "closure category": ticket.closure_category or "",
             "closure subcategory": ticket.closure_subcategory or "",
         }
+        # Priority is validated before anything changes, so a rejected override leaves the ticket untouched.
+        priority_change = None
+        if {"priority", "impact", "urgency"} & set(body):
+            for field in ("priority", "impact", "urgency", "priority_override_reason"):
+                if field in body and not isinstance(body[field], str):
+                    abort(400, description=tr("{field} must be a string.", field=field))
+            priority_change = {"impact": body.get("impact"), "urgency": body.get("urgency"),
+                               "priority": body.get("priority"), "reason": body.get("priority_override_reason")}
+            check_governed_priority(g.api_user, impact=body.get("impact", ticket.impact),
+                                    urgency=body.get("urgency", ticket.urgency), priority=body.get("priority"),
+                                    reason=body.get("priority_override_reason"),
+                                    overridden=bool(ticket.priority_overridden))
         # Applied before the state change so a resolving PATCH records them.
         if "resolution_notes" in body:
             ticket.resolution_notes = str(body["resolution_notes"] or "").strip()[:10000] or None
@@ -1484,14 +1503,8 @@ def register(app):
             if hold_reason and (ticket.kind != "incident" or body.get("state", ticket.state) != "Pending"):
                 abort(400, description=tr("hold_reason applies only to a Pending incident."))
             transition_ticket(ticket, str(body.get("state", ticket.state)), hold_reason=hold_reason)
-        if {"priority", "impact", "urgency"} & set(body):
-            for field in ("priority", "impact", "urgency", "priority_override_reason"):
-                if field in body and not isinstance(body[field], str):
-                    abort(400, description=tr("{field} must be a string.", field=field))
-            # Without an explicit priority, a new impact/urgency recalculates it.
-            apply_governed_priority(ticket, g.api_user, impact=body.get("impact"), urgency=body.get("urgency"),
-                                    priority=body.get("priority"), reason=body.get("priority_override_reason"),
-                                    source="REST API")
+        if priority_change:
+            apply_governed_priority(ticket, g.api_user, **priority_change, source="REST API")
         if "assigned_to_id" in body:
             assignee_id = body["assigned_to_id"]
             if assignee_id is not None:

@@ -7,6 +7,9 @@
   {% if hr_team %}<a class="requester-action" href="{{ url_for('enterprise_new', domain='hr') }}"><strong>{{ tr('Ask HR') }}</strong><span>{{ tr('Pay, benefits, leave and other HR questions') }}</span></a>{% endif %}
 </nav>
 
+{# Shown only when there is something to report: an affected service, a notice, or a feed that failed to load. #}
+{% set feed_total = (service_health.services|length if service_health else 0) + (service_notices['items']|length if service_notices else 0) %}
+{% if feed_total or service_health is none or service_notices is none %}
 <section class="portal-service-status" aria-labelledby="portal-status-heading">
   <header><h2 id="portal-status-heading">{{ tr('Service status') }}</h2><span class="portal-status-summary">
     {% if service_health is none %}{{ tr('Service status is temporarily unavailable') }}
@@ -14,7 +17,6 @@
     {% elif service_health.affected %}<i class="portal-status-dot affected" aria-hidden="true"></i>{{ trn(service_health.affected, '{count} service affected', '{count} services affected') }}
     {% else %}<i class="portal-status-dot" aria-hidden="true"></i>{{ tr('All services operational') }}{% endif %}
     </span><a href="{{ url_for('employee_service_status') }}">{{ tr('View all') }} <span aria-hidden="true">→</span></a></header>
-  {% set feed_total = (service_health.services|length if service_health else 0) + (service_notices['items']|length if service_notices else 0) %}
   {% if feed_total %}
   <div class="service-feed" data-service-feed role="region" aria-roledescription="{{ tr('carousel') }}" aria-label="{{ tr('Service notices') }}" aria-describedby="service-feed-instructions">
     <span class="service-feed-label">{{ tr('Updates') }}</span>
@@ -37,3 +39,4 @@
   {% if service_notices is none %}<p class="portal-notice-summary">{{ tr('Planned service notices are temporarily unavailable') }}</p>{% endif %}
 </section>
 <script src="{{ url_for('static', filename='service-status-feed.js', v=asset_version) }}" defer></script>
+{% endif %}

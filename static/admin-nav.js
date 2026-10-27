@@ -71,8 +71,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const target = new URL(filterForm.action, window.location.origin);
       target.searchParams.set("q", raw);
       searchAll.href = target.pathname + target.search;
-      searchAll.textContent = searchAll.dataset.labelTemplate.replace("__QUERY__", raw);
+      searchAll.textContent = searchAll.dataset.labelTemplate.split("__QUERY__").join(raw);
       results.hidden = false;
+      // Never leave the previous query's pages on screen while (or if) this one fails.
+      pages.replaceChildren();
+      pages.previousElementSibling.hidden = true;
       pending = setTimeout(async () => {
         const url = new URL(filterForm.dataset.navSearchUrl, window.location.origin);
         url.searchParams.set("q", raw);
@@ -188,7 +191,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const target = new URL(form.action, window.location.origin);
       target.searchParams.set("q", raw);
       searchAll.href = target.pathname + target.search;
-      searchAll.textContent = searchAll.dataset.labelTemplate.replace("__QUERY__", raw);
+      searchAll.textContent = searchAll.dataset.labelTemplate.split("__QUERY__").join(raw);
+      remoteResults.replaceChildren();
+      remoteHeading.hidden = true;
       pending = setTimeout(async () => {
         const url = new URL(form.dataset.navSearchUrl, window.location.origin);
         url.searchParams.set("q", raw);

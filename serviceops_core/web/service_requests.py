@@ -17,6 +17,7 @@ import app as core
 from serviceops_core.request_withdrawal import settle_request
 from serviceops_core import request_withdrawal
 from app import (
+    tenant_task_or_404,
     active_approval_delegation,
     approval_chain_for,
     attach_slas,
@@ -562,7 +563,7 @@ def register(app):
     @app.get("/catalog-task/<int:task_id>")
     @login_required
     def catalog_task_detail(task_id):
-        task = db.get_or_404(CatalogTask, task_id)
+        task = tenant_task_or_404(CatalogTask, task_id)
         if not user_can_view_catalog_task(current_user, task):
             abort(403, description=tr("You are not involved in this catalog task or its fulfillment."))
         ritm = task.requested_item
@@ -627,7 +628,7 @@ def register(app):
     @app.post("/catalog-task/<int:task_id>/notes")
     @login_required
     def catalog_task_note_add(task_id):
-        task = db.get_or_404(CatalogTask, task_id)
+        task = tenant_task_or_404(CatalogTask, task_id)
         if not user_can_view_catalog_task(current_user, task):
             abort(403)
         ritm = task.requested_item
@@ -666,7 +667,7 @@ def register(app):
     @app.post("/catalog-task/<int:task_id>")
     @roles("agent", "manager", "admin")
     def catalog_task_update(task_id):
-        task = db.get_or_404(CatalogTask, task_id)
+        task = tenant_task_or_404(CatalogTask, task_id)
         if not user_in_group(current_user, task.assignment_group):
             abort(403, description=(
                 tr("Only active members of {value} can update {number}.", value=task.assignment_group.name if task.assignment_group else 'the assignment group', number=task.number)

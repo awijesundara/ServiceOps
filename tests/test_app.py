@@ -2870,10 +2870,11 @@ def test_dependent_tables_carry_their_own_tenant_id_and_stay_isolated(client, ap
     assert client.post(f"/ritm/{other_ritm_id}/tasks", data={
         "title": "Cross-tenant task", "group_id": str(other_group_id),
     }).status_code == 403
-    assert client.get(f"/catalog-task/{other_task_id}").status_code == 403
+    # 404, not 403: another tenant's task does not exist from here.
+    assert client.get(f"/catalog-task/{other_task_id}").status_code == 404
     assert client.post(f"/catalog-task/{other_task_id}", data={
         "state": "In Progress",
-    }).status_code == 403
+    }).status_code == 404
 
 
 def test_incident_lifecycle(client, app):

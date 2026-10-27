@@ -1766,6 +1766,9 @@ def register(app):
         dedicated credential the backup job uses to report each successful
         run. A new credential replaces (revokes) the previous one. The token is
         shown once, with the exact command for the chosen deployment."""
+        # Backup status and RPO are platform-wide settings (tenant 1).
+        if current_user.tenant_id != 1 and current_user.effective_role != "superadmin":
+            abort(403)
         require_install_settings_authority()
         try:
             rpo = int(request.form.get("rpo_hours", "24"))

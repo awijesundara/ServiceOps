@@ -90,3 +90,30 @@ def test_every_mapped_parent_has_a_tenant_column():
     for model in (*DIRECT_PARENTS, *POLYMORPHIC_PARENTS):
         assert "tenant_id" in model.__table__.c, model
     assert RequestedItem in RECORD_TYPES.values()
+
+
+def test_parent_added_in_the_same_flush(app):
+    # The child is linked through the relationship, so its foreign key is unset until insert.
+    with app.app_context():
+        tenant_id, ticket, requester, _ = other_tenant_ticket()
+        sibling = Ticket(number="INC0077778", kind="incident", title="New", description="x",
+                         requester_id=requester.id, tenant_id=tenant_id, state="New", priority="P3")
+        item = ChecklistItem(text="Step", ticket=sibling)
+        db.session.add_all([sibling, item])
+        db.session.flush()
+        assert item.tenant_id == tenant_id
+        db.session.rollback()
+
+
+def test_approval_chain_history_takes_the_chain_tenant(app):
+    from app import ApprovalChain
+    with app.app_context():
+        tenant_id, ticket, _, _ = other_tenant_ticket()
+        chain = ApprovalChain(name="T2 chain", target_type="ticket", target_id=ticket.id, tenant_id=tenant_id)
+        db.session.add(chain)
+        db.session.flush()
+        history = TaskHistory(target_type="approval_chain", target_id=chain.id, event="Cancelled")
+        db.session.add(history)
+        db.session.flush()
+        assert history.tenant_id == tenant_id
+        db.session.rollback()

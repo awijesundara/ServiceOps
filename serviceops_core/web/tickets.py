@@ -17,6 +17,7 @@ from werkzeug.exceptions import HTTPException
 
 import app as core
 from app import (
+    tenant_task_or_404,
     _conflict_descriptions,
     active_change_freeze,
     align_tz,
@@ -63,6 +64,7 @@ from app import (
     require_resolution_notes,
     require_ticket_not_locked,
     require_ticket_team_access,
+    retarget_slas,
     role_at_least,
     roles,
     run_change_conflict_detection,
@@ -261,7 +263,7 @@ def register(app):
         if not task.assignment_group or task.assignment_group.tenant_id != current_user.tenant_id:
             abort(404)
         if not user_in_group(current_user, task.assignment_group):
-            abort(403, description=tr("Only members of {name} can take {number}.", name=task.assignment_group.name,
+            abort(403, description=tr("Only members of {name} can take {number}.", name=task.assignment_group.name if task.assignment_group else "",
                                       number=task.number))
         if task.assignee_id is not None:
             flash(tr("{number} is already assigned to {name}.", number=task.number, name=task.assignee.name), "error")
@@ -1090,9 +1092,12 @@ def register(app):
                             "priority override reason",
                             previous_override_reason, "None",
                         )
+                previous_priority = ticket.priority
                 ticket.impact = impact
                 ticket.urgency = urgency
                 ticket.priority = requested_priority
+                if requested_priority != previous_priority:
+                    retarget_slas("ticket", ticket.id, requested_priority, ticket.state)
                 ticket.assignee_id = assignee_id
                 if assignee_id:
                     follow_ticket(ticket, db.session.get(User, assignee_id))
@@ -1847,11 +1852,18 @@ def register(app):
     @app.post("/record/<target_type>/<int:target_id>/configuration-items")
     @roles("agent", "manager", "admin")
     def task_ci_add(target_type, target_id):
-        target = record_reference(target_type, target_id)
+        if target_type == "ticket":
+            # Locked: linking a CI to a change can supersede its approval chain, and
+            # a double submit must not start (and notify) two new chains.
+            target = tenant_record_or_404(Ticket, target_id, lock=True)
+        else:
+            target = record_reference(target_type, target_id)
         if not target or target_type not in ("ticket", "enterprise"):
             abort(404)
         if isinstance(target, Ticket):
             require_ticket_team_access(target)
+            if not require_ticket_not_locked(target):
+                return redirect(record_url(target))
         elif not user_can_manage_enterprise_record(current_user, target):
             abort(403)
         role = request.form.get("relationship_role")
@@ -1895,7 +1907,9 @@ def register(app):
             # governance rules): adding one to an already-approved change must
             # invalidate the current approval chain, the same as team/plan edits do.
             if isinstance(target, Ticket) and target.kind == "change":
-                supersede_change_approval(target, [role.lower()])
+                chain = approval_chain_for("ticket", target.id)
+                if chain is not None and chain.state in ("Running", "Approved"):
+                    supersede_change_approval(target, [role.lower()])
             db.session.commit()
         return redirect(record_url(target))
 
@@ -2034,7 +2048,7 @@ def register(app):
     @app.get("/operational-task/<int:task_id>")
     @login_required
     def operational_task_detail(task_id):
-        task = db.get_or_404(OperationalTask, task_id)
+        task = tenant_task_or_404(OperationalTask, task_id)
         parent = record_reference(task.parent_type, task.parent_id)
         if not parent:
             abort(404)
@@ -2104,10 +2118,10 @@ def register(app):
     @app.post("/operational-task/<int:task_id>/notes")
     @roles("agent", "manager", "admin")
     def operational_task_note_add(task_id):
-        task = db.get_or_404(OperationalTask, task_id)
+        task = tenant_task_or_404(OperationalTask, task_id)
         if not user_in_group(current_user, task.assignment_group):
             abort(403, description=(
-                tr("Only active members of {name} can update {number}.", name=task.assignment_group.name, number=task.number)
+                tr("Only active members of {name} can update {number}.", name=task.assignment_group.name if task.assignment_group else "", number=task.number)
             ))
         body = request.form.get("body", "").strip()
         if body:
@@ -2123,10 +2137,10 @@ def register(app):
     @app.post("/operational-task/<int:task_id>")
     @roles("agent", "manager", "admin")
     def operational_task_update(task_id):
-        task = db.get_or_404(OperationalTask, task_id)
+        task = tenant_task_or_404(OperationalTask, task_id)
         if not user_in_group(current_user, task.assignment_group):
             abort(403, description=(
-                tr("Only active members of {name} can update {number}.", name=task.assignment_group.name, number=task.number)
+                tr("Only active members of {name} can update {number}.", name=task.assignment_group.name if task.assignment_group else "", number=task.number)
             ))
         assignee_id = form_int("assignee_id")
         if assignee_id:
@@ -2247,7 +2261,7 @@ def register(app):
                 abort(400, description=tr("A summary of up to 180 characters and a description are required."))
             # Priority and risk are the handling team's assessment; the form
             # hides them from requesters, so the server ignores them too.
-            staff = current_user.effective_role != "requester"
+            staff = role_at_least(current_user.effective_role, "agent")
             priority = request.form.get("priority", "P3") if staff else "P3"
             risk = request.form.get("risk", "Medium") if staff else "Medium"
             if priority not in ENTERPRISE_PRIORITIES or risk not in ENTERPRISE_RISKS:
@@ -2580,6 +2594,10 @@ def register(app):
     @roles("agent", "manager", "admin")
     def improvement_update(item_id):
         item = tenant_record_or_404(ImprovementItem, item_id)
+        # Unowned items can be picked up by any agent; an owned one is changed by its owner or a manager.
+        if (item.owner_id not in (None, current_user.id)
+                and not role_at_least(current_user.effective_role, "manager")):
+            abort(403, description=tr("Only the owner or a manager can update {number}.", number=item.number))
         new_status = request.form.get("status", item.status)
         if new_status not in IMPROVEMENT_STATES:
             abort(400)
@@ -2889,6 +2907,12 @@ def register(app):
         ticket = tenant_record_or_404(Ticket, ticket_id)
         if not user_can_view_ticket(current_user, ticket):
             abort(403)
+        # Seeing a ticket is not enough to add to it: the requester or the owning team only,
+        # and not once it is closed (deleting an attachment is locked the same way).
+        if current_user.id != ticket.requester_id:
+            require_ticket_team_access(ticket)
+        if not require_ticket_not_locked(ticket):
+            return redirect(url_for("ticket_detail", ticket_id=ticket_id))
         upload = request.files.get("file")
         attachment, error = save_ticket_attachment(ticket, upload)
         if error:

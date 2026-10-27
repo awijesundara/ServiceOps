@@ -122,3 +122,29 @@ def test_ai_update_cannot_override_the_matrix(app):
         actions.execute(SimpleNamespace(action_type="update_ticket", payload_json=json.dumps({"priority": "P3"})),
                         ticket, admin)
         assert (ticket.priority, ticket.priority_overridden) == ("P3", False)
+
+
+def test_rejected_priority_patch_changes_nothing(client, app):
+    headers, group_id = api_headers(app, "agent")
+    number = create(client, headers, group_id).json["data"]["number"]
+    response = patch(client, headers, number, state="In Progress", priority="P1",
+                     priority_override_reason="Customer-facing outage for every region")
+    assert response.status_code == 403
+    with app.app_context():
+        ticket = Ticket.query.filter_by(number=number).one()
+        assert (ticket.state, ticket.priority) == ("New", "P3")
+
+
+def test_only_a_manager_clears_an_override(client, app):
+    manager, group_id = api_headers(app, "manager")
+    agent, _ = api_headers(app, "agent")
+    number = create(client, manager, group_id, priority="P1",
+                    priority_override_reason="Customer-facing outage for every region").json["data"]["number"]
+    # Changing impact alone would recalculate priority and silently drop the override.
+    assert patch(client, agent, number, impact="Low").status_code == 403
+    with app.app_context():
+        ticket = Ticket.query.filter_by(number=number).one()
+        assert (ticket.priority, ticket.priority_overridden, ticket.impact) == ("P1", True, "Medium")
+    assert patch(client, manager, number, impact="Low").status_code == 200
+    with app.app_context():
+        assert Ticket.query.filter_by(number=number).one().priority_overridden is False

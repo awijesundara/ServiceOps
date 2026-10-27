@@ -14,6 +14,7 @@ from app import (
     _poll_client_mailbox,
     apply_filter_conditions,
     attach_slas,
+    retarget_slas,
     audit,
     CLIENT_CUSTOM_FIELD_ENTITY_TYPES,
     CLIENT_CUSTOM_FIELD_TYPES,
@@ -325,6 +326,7 @@ def register(app):
                 agent_ids = {agent.id for agent in agents}
                 assignee_id = request.form.get("assignee_id", type=int)
                 ticket.assignee_id = assignee_id if assignee_id in agent_ids else None
+                old_priority = ticket.priority
                 ticket.status, ticket.priority, ticket.ticket_type = status, priority, ticket_type
                 ticket.tags = request.form.get("tags", "").strip()[:500]
                 ticket.solved_at = now() if status == "Solved" and old_status != "Solved" else (None if status not in ["Solved", "Closed"] else ticket.solved_at)
@@ -337,6 +339,9 @@ def register(app):
                     evaluate_client_triggers("status_changed", ticket, agents)
                     sync_slas("client_ticket", ticket.id, ticket.status)
                 evaluate_client_triggers("updated", ticket, agents)
+                if ticket.priority != old_priority:
+                    retarget_slas("client_ticket", ticket.id, ticket.priority, ticket.status,
+                                  organization_id=ticket.organization_id)
                 audit("client ticket updated", ticket.number, f"Status {old_status} -> {status}")
                 db.session.commit()
                 return redirect(url_for("client_ticket_detail", ticket_id=ticket.id))
@@ -348,7 +353,7 @@ def register(app):
                     macro_actions = json.loads(macro.actions_json or "{}")
                 except (TypeError, ValueError):
                     macro_actions = {}
-                old_status = ticket.status
+                old_status, old_priority = ticket.status, ticket.priority
                 if "status" in macro_actions and macro_actions["status"] in ["New", "Open", "Pending", "On-hold", "Solved", "Closed"]:
                     ticket.status = macro_actions["status"]
                 if "priority" in macro_actions and macro_actions["priority"] in ["Low", "Normal", "High", "Urgent"]:
@@ -380,6 +385,9 @@ def register(app):
                         visibility=macro.reply_visibility if macro.reply_visibility in ("public", "internal") else "public",
                     ))
                 evaluate_client_triggers("updated", ticket, agents)
+                if ticket.priority != old_priority:
+                    retarget_slas("client_ticket", ticket.id, ticket.priority, ticket.status,
+                                  organization_id=ticket.organization_id)
                 ticket.updated_at = now()
                 audit("client macro applied", ticket.number, macro.name)
                 db.session.commit()

@@ -30,7 +30,7 @@ from datetime import date, datetime, time as dt_time, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formataddr
 from functools import wraps
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import urlsplit, quote, urljoin, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -2393,8 +2393,12 @@ def deliver_webhook(event, connection):
                 except requests.RequestException as error:
                     raise RuntimeError("Notification provider request failed.") from error
         if response.is_redirect:
-            location = response.headers.get("Location", "")
-            target = urljoin(target, location)
+            location = urljoin(target, response.headers.get("Location", ""))
+            # Never replay a signed body (or a provider token) to another origin: a
+            # hostile receiver could forward it, or point it at an internal host.
+            if encoded is not None or urlsplit(location)[:2] != urlsplit(target)[:2]:
+                raise RuntimeError(f"Redirect refused (HTTP {response.status_code}).")
+            target = location
             continue
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError(f"HTTP {response.status_code}")
@@ -2660,6 +2664,14 @@ def record_tenant_id(record):
     if isinstance(record, RequestedItem):
         return record.request.tenant_id if record.request else None
     return getattr(record, "tenant_id", None)
+
+
+def tenant_task_or_404(model, task_id):
+    """A task found by id, or 404 when it does not exist or belongs to another tenant (its parent's tenant)."""
+    task = db.session.get(model, task_id)
+    if task is None or record_tenant_id(task) != tenant_context_id():
+        abort(404)
+    return task
 
 
 def record_type_for(record):
@@ -4188,7 +4200,8 @@ def change_approval_stages(ticket):
 
 def supersede_change_approval(ticket, changed_fields):
     previous = approval_chain_for("ticket", ticket.id)
-    if previous:
+    # A final outcome (Rejected, Cancelled) stays on record; the new chain is a resubmission.
+    if previous and previous.state in ("Running", "Approved"):
         previous.state = "Superseded"
         previous.completed_at = now()
         for gate in previous.gates:
@@ -4526,7 +4539,7 @@ def decide_vote(vote, decision, comments):
             notify_request_outcome(chain, "approved", comments)
 
 
-def attach_slas(target_type, target_id, priority, organization_id=None):
+def attach_slas(target_type, target_id, priority, organization_id=None, started_at=None):
     """`organization_id` (only meaningful for target_type == "client_ticket")
     lets a Client Management organization's own SLADefinition rows
     (client_organization_id set) override the tenant-wide default (rows with
@@ -4558,10 +4571,11 @@ def attach_slas(target_type, target_id, priority, organization_id=None):
     for definition in definitions:
         if definition.priority and definition.priority != priority:
             continue
+        # A cancelled SLA (for example after a priority change) does not block a new one.
         exists = TaskSLA.query.filter_by(definition_id=definition.id, target_type=target_type,
-                                         target_id=target_id).first()
+                                         target_id=target_id).filter(TaskSLA.stage != "Cancelled").first()
         if not exists:
-            started = now()
+            started = started_at or now()
             if definition.schedule:
                 holidays = [row.holiday_date for row in definition.schedule.holidays]
                 breach_at = add_business_minutes(
@@ -4580,6 +4594,54 @@ def attach_slas(target_type, target_id, priority, organization_id=None):
                 details=f"Target {breach_at.isoformat()}",
                 tenant_id=definition.tenant_id,
             ))
+
+
+def retarget_slas(target_type, target_id, priority, state, organization_id=None):
+    """Move a record's running SLAs to the definitions for its new priority.
+
+    Running SLAs bound to another priority are cancelled (their history is
+    kept) and the new priority's SLAs start from the original start time, so
+    raising P4 to P1 does not reset the clock. Time already spent paused is
+    carried over. Unrestricted definitions (no priority) are left alone.
+    """
+    if target_id is None:
+        return
+    replaced = [
+        task_sla for task_sla in TaskSLA.query.filter_by(target_type=target_type, target_id=target_id).all()
+        if task_sla.stage not in ("Completed", "Cancelled")
+        and task_sla.definition.priority and task_sla.definition.priority != priority
+    ]
+    if not replaced:
+        return
+    started = min(task_sla.started_at for task_sla in replaced)
+    current = now()
+
+    def paused_total(task_sla):
+        # Stored pause time plus a pause still in progress.
+        total = task_sla.paused_seconds or 0
+        if task_sla.stage == "Paused" and task_sla.paused_at:
+            reference = current if task_sla.paused_at.tzinfo else current.replace(tzinfo=None)
+            total += int((reference - align_tz(task_sla.paused_at, reference)).total_seconds())
+        return total
+
+    paused_seconds = max(paused_total(task_sla) for task_sla in replaced)
+    for task_sla in replaced:
+        task_sla.stage = "Cancelled"
+        task_sla.stopped_at = now()
+        db.session.add(SLAEvent(
+            task_sla_id=task_sla.id, event_type="Cancelled",
+            details=f"Replaced: priority changed to {priority}",
+            tenant_id=task_sla.definition.tenant_id,
+        ))
+    db.session.flush()
+    existing = {row.id for row in TaskSLA.query.filter_by(target_type=target_type, target_id=target_id)}
+    attach_slas(target_type, target_id, priority, organization_id=organization_id, started_at=started)
+    for task_sla in TaskSLA.query.filter_by(target_type=target_type, target_id=target_id).all():
+        if task_sla.id not in existing and paused_seconds:
+            task_sla.paused_seconds = paused_seconds
+            task_sla.breach_at += timedelta(seconds=paused_seconds)
+    # A new SLA follows the record's current state (paused, breached, ...).
+    sync_slas(target_type, target_id, state)
 
 
 def sync_slas(target_type, target_id, state):
@@ -4626,11 +4688,8 @@ def sync_slas(target_type, target_id, state):
                 details=f"Resumed after {paused} seconds",
                 tenant_id=task_sla.definition.tenant_id,
             ))
-        current = now()
-        if task_sla.breach_at.tzinfo is None:
-            current = current.replace(tzinfo=None)
-        if task_sla.stage == "In Progress" and current > task_sla.breach_at:
-            task_sla.breached = True
+        # Breaches are flagged only by process_sla_breaches(), which also records
+        # the event and escalates; flagging here would make the worker skip it.
 
 
 def _match_existing_client_ticket(tenant_id, parsed):
@@ -7675,10 +7734,11 @@ def create_app(test_config=None):
                 "api_mobile_cloudflare_access", "api_mobile_keycloak_exchange",
                 "api_passkey_authentication_options", "api_passkey_authentication_complete",
             }
-            or
-            request.path.startswith("/api/v1/monitoring/")
-            or (request.path.startswith("/api/v1/") or request.path.startswith("/scim/v2/"))
-            and getattr(g, "api_client", None)
+            or (
+                request.path.startswith(("/api/v1/", "/scim/v2/"))
+                and (getattr(g, "api_client", None) or request.path.startswith("/api/v1/monitoring/"))
+                and "Authorization" in request.headers
+            )
         ):
             return None
         if not app.config["CSRF_ENABLED"] or request.method not in {

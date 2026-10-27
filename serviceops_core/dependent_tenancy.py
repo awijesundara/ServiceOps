@@ -5,13 +5,15 @@ inherit their tenant only through a parent. They now store it too, so
 queries, exports and constraints can be tenant-scoped directly. The value is
 always taken from the parent, never from whoever happens to be signed in, so
 background jobs and API calls set it correctly as well. Migration
-20261025_0145 backfills existing rows with the same rules (keep the two in
+20261025_0145 (and 20261027_0146 for approval chains and contracts) backfill
+existing rows with the same rules (keep the two in
 step when a parent type is added).
 """
+import sqlalchemy as sa
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from serviceops_models import (APIClient, APIRateLimitWindow, BusinessSchedule, CatalogRequest, CatalogTask,
+from serviceops_models import (APIClient, ApprovalChain, Contract, APIRateLimitWindow, BusinessSchedule, CatalogRequest, CatalogTask,
                                CatalogTaskControl, ChangeOwnership, ChangeRevision, ChecklistItem, ClientTicket,
                                ConfigurationItem, EnterpriseRecord, ExternalIdentity, Favorite, Knowledge,
                                MajorIncidentProfile, ManagedRoleGrant, NotificationPreference, OperationalTask,
@@ -63,6 +65,8 @@ RECORD_TYPES = {
     "client_ticket": ClientTicket,
     "work_item": WorkItem,
     "knowledge": Knowledge,
+    "approval_chain": ApprovalChain,
+    "contract": Contract,
 }
 
 
@@ -90,17 +94,47 @@ def parent_tenant(session, row):
     return None
 
 
+def _parent(row):
+    """(parent model, parent id) for a dependent row, or (None, None)."""
+    model = type(row)
+    if model in DIRECT_PARENTS:
+        attribute, parent_model = DIRECT_PARENTS[model]
+        return parent_model, getattr(row, attribute)
+    type_attribute, id_attribute = POLYMORPHIC_PARENTS[model]
+    return RECORD_TYPES.get(getattr(row, type_attribute)), getattr(row, id_attribute)
+
+
 @event.listens_for(Session, "before_flush")
 def _fill_dependent_tenant(session, flush_context, instances):
+    # Parents already in the session resolve here; a parent added in this same
+    # flush has no id yet and is resolved at insert time below.
     with session.no_autoflush:
         for row in list(session.new):
             if type(row) in DIRECT_PARENTS or type(row) in POLYMORPHIC_PARENTS:
                 if row.tenant_id is None:
-                    row.tenant_id = parent_tenant(session, row) or _signed_in_tenant()
+                    row.tenant_id = parent_tenant(session, row)
+
+
+def _fill_at_insert(mapper, connection, row):
+    """By insert time the unit of work has written the parent and set the foreign key."""
+    if row.tenant_id is not None:
+        return
+    parent_model, parent_id = _parent(row)
+    if parent_model is not None and parent_id is not None:
+        table = parent_model.__table__
+        row.tenant_id = connection.execute(
+            sa.select(table.c.tenant_id).where(table.c.id == parent_id)).scalar()
+    if row.tenant_id is None:
+        # No resolvable parent at all: the signed-in tenant, or NULL in a background job.
+        row.tenant_id = _signed_in_tenant()
+
+
+for _model in (*DIRECT_PARENTS, *POLYMORPHIC_PARENTS):
+    event.listen(_model, "before_insert", _fill_at_insert)
 
 
 def _signed_in_tenant():
-    """Fallback for a parent not yet flushed; None outside a request (a background job)."""
+    """Fallback for a row with no resolvable parent; None outside a request (a background job)."""
     try:
         return tenant_context_id()
     except RuntimeError:

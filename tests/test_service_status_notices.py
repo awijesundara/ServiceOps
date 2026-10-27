@@ -115,8 +115,7 @@ def test_empty_updates_strip_is_omitted_for_employee_and_admin(client, app):
             session.clear()
         login(client,username,password)
         html=client.get('/').get_data(as_text=True)
-        assert 'All services operational' in html
-        assert 'class="portal-service-status"' in html
+        assert 'class="portal-service-status"' not in html
         assert 'class="service-feed"' not in html
         assert 'class="service-feed-label"' not in html
         assert 'data-service-feed-controls' not in html

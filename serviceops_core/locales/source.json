@@ -8835,6 +8835,9 @@
    "id": "Only a completed investigation can become a ticket action."
   },
   {
+   "id": "Only a manager or administrator may clear a priority override."
+  },
+  {
    "id": "Only a manager or administrator may override calculated priority, with a reason of at least 10 characters."
   },
   {
@@ -8968,6 +8971,12 @@
   },
   {
    "id": "Only the incident's assignee or its assigned team can investigate it with AI."
+  },
+  {
+   "id": "Only the owner or a manager can update {number}."
+  },
+  {
+   "id": "Only the platform backup reporter can report backups."
   },
   {
    "id": "Only the reporter or a project administrator can delete a work item."
@@ -14431,6 +14440,9 @@
   },
   {
    "id": "This account is temporarily locked."
+  },
+  {
+   "id": "This account is temporarily locked. Try again later."
   },
   {
    "id": "This account or its organization is not active."

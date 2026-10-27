@@ -45,7 +45,27 @@ KEYCLOAK_REFUSALS = {
     "link_refused": translatable("An account with this email already exists. Verify your email address with "
                                  "your identity provider, or ask an administrator to link the account."),
     "inactive": translatable("This account or its organization is not active."),
+    "locked": translatable("This account is temporarily locked. Try again later."),
 }
+
+
+def start_session(user, provider):
+    """Sign ``user`` in on a fresh session: nothing set before sign-in survives except pending flashes."""
+    flashes = session.get("_flashes")
+    session.clear()
+    if flashes:
+        session["_flashes"] = flashes
+    login_user(user)
+    session.permanent = True
+    session["_auth_version"] = user.auth_version
+    session["_auth_provider"] = provider
+    session["_csrf_token"] = secrets.token_urlsafe(32)
+
+
+def start_page_for(user):
+    preference = UserPreference.query.filter_by(user_id=user.id).first()
+    start_page = preference.start_page if preference else None
+    return start_page if is_safe_internal_path(start_page) else url_for("dashboard")
 
 
 def resolve_keycloak_user(claims, platform="web"):
@@ -88,6 +108,11 @@ def resolve_keycloak_user(claims, platform="web"):
         return None, "link_refused"
     if not account_usable(user):
         return None, "inactive"
+    if account_locked(user):
+        # SSO is a shortcut into the account, not a bypass of its lockout.
+        audit("login_blocked", user.username, f"reason=locked; provider=keycloak{suffix}")
+        db.session.commit()
+        return None, "locked"
     return user, None
 
 
@@ -108,11 +133,7 @@ def register(app):
             # is left to the existing password-check logic below, which
             # already supports switching accounts without an explicit
             # logout first.
-            preference = UserPreference.query.filter_by(user_id=current_user.id).first()
-            start_page = preference.start_page if preference else None
-            if not is_safe_internal_path(start_page):
-                start_page = url_for("dashboard")
-            return redirect(start_page)
+            return redirect(start_page_for(current_user))
         # After an explicit sign-out the Cloudflare Access shortcut stays off
         # for this browser session, so the person can sign in as another
         # account; "Continue as your Cloudflare Access identity" (?sso=1)
@@ -150,20 +171,12 @@ def register(app):
                     session["_mfa_pending_provider"] = "cloudflare_access"
                     return redirect(url_for("login_mfa"))
                 if sso_user:
-                    login_user(sso_user)
-                    session.permanent = True
-                    session["_auth_version"] = sso_user.auth_version
-                    session["_auth_provider"] = "cloudflare_access"
-                    session["_csrf_token"] = secrets.token_urlsafe(32)
+                    start_session(sso_user, "cloudflare_access")
                     sso_user.failed_login_count = 0
                     sso_user.locked_until = None
                     audit("login", sso_user.username, "provider=cloudflare_access")
                     db.session.commit()
-                    preference = UserPreference.query.filter_by(user_id=sso_user.id).first()
-                    start_page = preference.start_page if preference else None
-                    if not is_safe_internal_path(start_page):
-                        start_page = url_for("dashboard")
-                    return redirect(start_page)
+                    return redirect(start_page_for(sso_user))
         if request.method == "POST":
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
@@ -196,11 +209,13 @@ def register(app):
                     deployment_profile=app.config["DEPLOYMENT_PROFILE"])
                 flash(tr("Too many sign-in attempts. Please wait a moment and try again."), "error")
                 return response, 429
-            lockout_record = User.query.filter_by(username=username).first()
+            lockout_record = User.query.filter(func.lower(User.username) == username.lower()).first()
             if lockout_record and lockout_record.locked_until and align_tz(lockout_record.locked_until, now()) > now():
                 audit("login_blocked", username, "reason=locked")
                 db.session.commit()
-                flash(tr("This account is temporarily locked due to repeated failed sign-ins. Try again later."), "error")
+                # The same answer as a wrong password, so the lock does not confirm the username exists.
+                burn_password_check(password)
+                flash(tr("Invalid username or password."), "error")
                 return render_template(
                     "login.html", ldap_enabled=setting_bool("LDAP_ENABLED"),
                     keycloak_enabled=app.config["KEYCLOAK_ENABLED"],
@@ -247,18 +262,10 @@ def register(app):
             if user:
                 user.failed_login_count = 0
                 user.locked_until = None
-                login_user(user)
-                session.permanent = True
-                session["_auth_version"] = user.auth_version
-                session["_auth_provider"] = provider
-                session["_csrf_token"] = secrets.token_urlsafe(32)
+                start_session(user, provider)
                 audit("login", user.username, f"provider={provider}")
                 db.session.commit()
-                preference = UserPreference.query.filter_by(user_id=user.id).first()
-                start_page = preference.start_page if preference else None
-                if not is_safe_internal_path(start_page):
-                    start_page = url_for("dashboard")
-                return redirect(start_page)
+                return redirect(start_page_for(user))
             if lockout_record:
                 lockout_record.failed_login_count = (lockout_record.failed_login_count or 0) + 1
                 max_attempts = setting_int("LOGIN_MAX_ATTEMPTS", 5)
@@ -412,11 +419,7 @@ def register(app):
                 provider = session.pop("_mfa_pending_provider", "local")
                 user.failed_login_count = 0
                 user.locked_until = None
-                login_user(user)
-                session.permanent = True
-                session["_auth_version"] = user.auth_version
-                session["_auth_provider"] = provider
-                session["_csrf_token"] = secrets.token_urlsafe(32)
+                start_session(user, provider)
                 audit(
                     "login", user.username,
                     f"provider={provider}; mfa=backup_code" if backup_used else f"provider={provider}; mfa=totp",
@@ -424,11 +427,7 @@ def register(app):
                 db.session.commit()
                 if backup_used:
                     flash(tr("Signed in with a backup code. Consider regenerating your backup codes."), "warning")
-                preference = UserPreference.query.filter_by(user_id=user.id).first()
-                start_page = preference.start_page if preference else None
-                if not is_safe_internal_path(start_page):
-                    start_page = url_for("dashboard")
-                return redirect(start_page)
+                return redirect(start_page_for(user))
             if not request.form.get("code", "").strip():
                 flash(tr("Invalid verification code."), "error")
                 return render_template("login_mfa.html")
@@ -459,14 +458,10 @@ def register(app):
             abort(401)
         if error:
             abort(403, description=tr(KEYCLOAK_REFUSALS[error]))
-        login_user(user)
-        session.permanent = True
-        session["_auth_version"] = user.auth_version
-        session["_auth_provider"] = "keycloak"
-        session["_csrf_token"] = secrets.token_urlsafe(32)
+        start_session(user, "keycloak")
         audit("login", user.username, "provider=keycloak")
         db.session.commit()
-        return redirect(url_for("dashboard"))
+        return redirect(start_page_for(user))
 
     @app.post("/logout")
     @login_required

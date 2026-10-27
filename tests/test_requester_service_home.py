@@ -34,12 +34,12 @@ def test_published_health_and_catalog_links(client, app):
 
 def test_health_empty_healthy_outage_and_limit(client, app):
     login(client,'employee','Employee123!')
-    assert b'No services published yet' in client.get('/').data
+    assert b'portal-service-status' not in client.get('/').data  # nothing to report: no status bar
     with app.app_context():
         service=ServiceOffering(name='Published email',tenant_id=1,status_page_visible=True)
         db.session.add(service);db.session.commit()
     html=client.get('/').get_data(as_text=True)
-    assert 'All services operational' in html and 'portal-status-row' not in html
+    assert 'portal-service-status' not in html and 'All services operational' not in html
     with app.app_context():
         user=User.query.filter_by(username='employee').one()
         ticket=Ticket(number='INC990001',kind='incident',title='Outage',description='Down',category='Software',
