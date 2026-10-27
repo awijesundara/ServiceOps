@@ -16,6 +16,7 @@ import struct
 import time
 from urllib.parse import urlsplit
 
+from sqlalchemy.exc import IntegrityError
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
@@ -85,12 +86,24 @@ def _vapid_private_key():
     pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                             serialization.NoEncryption()).decode()
     row = db.session.get(PlatformSetting, PRIVATE_KEY_SETTING)
+    if row is not None and row.value:
+        # Another worker created it first: browsers may already hold that key.
+        return serialization.load_pem_private_key(
+            settings_cipher().decrypt(row.value.encode()), password=None)
     if row is None:
         row = PlatformSetting(key=PRIVATE_KEY_SETTING, tenant_id=1, encrypted=True)
         db.session.add(row)
     row.encrypted = True
     row.value = settings_cipher().encrypt(pem.encode()).decode()
-    db.session.flush()
+    try:
+        with db.session.begin_nested():
+            db.session.flush()
+    except IntegrityError:
+        # Lost the race to create it: use the winner's key, never replace it.
+        db.session.expire_all()
+        row = db.session.get(PlatformSetting, PRIVATE_KEY_SETTING)
+        return serialization.load_pem_private_key(
+            settings_cipher().decrypt(row.value.encode()), password=None)
     return key
 
 

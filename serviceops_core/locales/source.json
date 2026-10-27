@@ -1204,6 +1204,10 @@
    "id": "Allow approved ticket actions"
   },
   {
+   "id": "Allow notifications when the browser asks to turn them on.",
+   "javascript": true
+  },
+  {
    "id": "Allow sign-in only for members of a mapped AD/LDAP group (others are refused and deactivated at the next sync)"
   },
   {
@@ -3486,7 +3490,7 @@
    "id": "Could not allocate a unique record number; please try again."
   },
   {
-   "id": "Could not change desktop notifications in this browser.",
+   "id": "Could not change desktop notifications in this browser: {reason}",
    "javascript": true
   },
   {
@@ -8741,6 +8745,10 @@
   },
   {
    "id": "Notifications"
+  },
+  {
+   "id": "Notifications are blocked for ServiceOps. Allow them in the browser's site settings and in the computer's notification settings, then try again.",
+   "javascript": true
   },
   {
    "id": "Notifications · {instance_name}"
@@ -14491,6 +14499,10 @@
   },
   {
    "id": "This browser blocks notifications for ServiceOps. Allow them in the browser's site settings.",
+   "javascript": true
+  },
+  {
+   "id": "This browser could not reach its push service. In Brave, turn on \"Use Google services for push messaging\" in Settings → Privacy and security, then try again.",
    "javascript": true
   },
   {

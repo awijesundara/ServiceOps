@@ -177,3 +177,11 @@ def test_preferences_explain_when_desktop_notifications_are_off(client, app):
     assert client.get("/push/config").get_json() == {"enabled": False, "public_key": None}
     login(client, "employee", "Employee123!")
     assert "data-web-push-admin" not in client.get("/preferences").get_data(as_text=True)
+
+
+def test_the_server_key_is_never_replaced_once_created(app):
+    with app.app_context():
+        first = webpush.public_key()
+        db.session.commit()
+        # A second worker that missed the cached value still gets the stored key.
+        assert webpush.public_key() == first

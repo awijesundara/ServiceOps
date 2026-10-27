@@ -980,6 +980,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   const toKey = text => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - text.length % 4) % 4)), c => c.charCodeAt(0));
   let config = null;
+  // The browser's own reason, in words a person can act on.
+  function pushErrorMessage(error) {
+    const detail = `${error?.name || ""} ${error?.message || ""}`.toLowerCase();
+    if (detail.includes("push service")) {
+      return tr("This browser could not reach its push service. In Brave, turn on \"Use Google services for push messaging\" in Settings → Privacy and security, then try again.");
+    }
+    if (error?.name === "NotAllowedError" || detail.includes("permission denied")) {
+      return tr("Notifications are blocked for ServiceOps. Allow them in the browser's site settings and in the computer's notification settings, then try again.");
+    }
+    return tr("Could not change desktop notifications in this browser: {reason}", {reason: (error?.message || error?.name || "unknown error").slice(0, 160)});
+  }
   async function current() {
     const registration = await navigator.serviceWorker.ready;
     return registration.pushManager.getSubscription();
@@ -1004,9 +1015,23 @@ document.addEventListener("DOMContentLoaded", () => {
         await subscription.unsubscribe();
         showToast(tr("Desktop notifications turned off for this browser."), "success");
       } else {
-        if (await Notification.requestPermission() !== "granted") { await render(); return; }
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          if (permission === "default") showToast(tr("Allow notifications when the browser asks to turn them on."), "error");
+          await render();
+          return;
+        }
         const registration = await navigator.serviceWorker.ready;
-        const created = await registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: toKey(config.public_key)});
+        const options = {userVisibleOnly: true, applicationServerKey: toKey(config.public_key)};
+        let created;
+        try {
+          created = await registration.pushManager.subscribe(options);
+        } catch (error) {
+          // A subscription left over from an earlier server key blocks a new one: replace it once.
+          if (error?.name !== "InvalidStateError") throw error;
+          await (await registration.pushManager.getSubscription())?.unsubscribe();
+          created = await registration.pushManager.subscribe(options);
+        }
         const response = await fetch("/push/subscriptions", {method: "POST", headers: {...csrfHeaders, "Content-Type": "application/json"}, body: JSON.stringify(created.toJSON())});
         if (!response.ok) {
           await created.unsubscribe();
@@ -1017,7 +1042,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     } catch (error) {
-      showToast(tr("Could not change desktop notifications in this browser."), "error");
+      showToast(pushErrorMessage(error), "error");
     } finally {
       button.disabled = false;
       await render();
