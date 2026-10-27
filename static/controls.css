@@ -152,7 +152,7 @@ body main .dashboard-columns>.panel:only-child{grid-column:1/-1}
 .ui-calendar-stages button[aria-pressed=true]{border-color:var(--green);font-weight:700}
 .ui-calendar-stages[hidden]{display:none}
 .ui-calendar-times label{display:grid;gap:var(--space-1)}
-body main .ui-date-window{grid-column:1/-1;justify-self:start;max-width:100%}
+
 .ui-date-input::-webkit-calendar-picker-indicator{display:none}
 @media(pointer:coarse){.ui-calendar{--calendar-day-size:44px}}
 @media(max-width:380px){.ui-calendar{padding:var(--space-3)}.ui-calendar-nav{gap:var(--space-1)}.ui-calendar-nav input{width:5em}}

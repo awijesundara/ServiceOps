@@ -252,18 +252,10 @@
       if (a.length === 1 && b.length === 1 && !a[0].disabled && !b[0].disabled && !a[0].readOnly && !b[0].readOnly) { fields = [a[0], b[0]]; break; }
     }
     if (fields.some(node => node.dataset.calendarReady)) return;
-    let trigger = null;
-    const refresh = () => {
-      if (trigger) trigger.textContent = fields.every(node => node.value) ? `${formatted(dayValue(fields[0]))} → ${formatted(dayValue(fields[1]))}` : tr('Choose date window');
-    };
-    if (fields.length === 2) {
-      trigger = button('', () => open(fields, trigger, refresh, trigger));
-      trigger.classList.add('ui-date-window');
-      trigger.setAttribute('aria-label', tr('Choose date window'));
-      trigger.setAttribute('aria-haspopup', 'dialog'); trigger.setAttribute('aria-controls', dialog.id); trigger.setAttribute('aria-expanded', 'false');
-      const first = fields[0].closest('label') || fields[0];
-      first.before(trigger); refresh();
-    }
+    // The start and end fields show the window themselves; either one opens the
+    // range picker, so no separate summary button repeats the same dates.
+    const trigger = null;
+    const refresh = () => {};
     fields.forEach(field => {
       field.dataset.calendarReady = String(++serial);
       field.classList.add('ui-date-input');

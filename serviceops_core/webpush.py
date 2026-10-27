@@ -127,6 +127,24 @@ def vapid_authorization(endpoint, contact, key=None):
     return f"vapid t={token}, k={b64url(point)}"
 
 
+def _target_path(core, payload):
+    """The record's path for the notification click. The outbox worker has no
+    request, and url_for needs one, so build it in a throwaway request context;
+    a link that cannot be built falls back to the inbox rather than failing delivery."""
+    from flask import current_app, has_request_context
+    if not payload.get("target_type"):
+        return None
+    try:
+        if has_request_context():
+            return core.notification_target_url(payload.get("target_type"), payload.get("target_id"))
+        with current_app.test_request_context("/"):
+            return core.notification_target_url(payload.get("target_type"), payload.get("target_id"))
+    except Exception:
+        current_app.logger.warning("Web Push link could not be built for %s", payload.get("target_type"),
+                                   exc_info=True)
+        return None
+
+
 def deliver(event):
     """Send one notification.created outbox event to the recipient's browser
     subscriptions. Returns how many were delivered; gone subscriptions
@@ -143,8 +161,7 @@ def deliver(event):
     if not subscriptions:
         return 0
     from serviceops_core.public_url import public_origin
-    url = core.notification_target_url(payload.get("target_type"), payload.get("target_id")) if (
-        payload.get("target_type")) else None
+    url = _target_path(core, payload)
     body = json.dumps({
         "title": (payload.get("title") or "ServiceOps")[:120],
         "body": (payload.get("body") or "")[:300],

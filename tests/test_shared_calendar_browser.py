@@ -34,8 +34,9 @@ def test_shared_calendar_real_save_and_constraints(server,width,dark,touch):
         errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
         _sign_in(page,base)
         page.goto(base+'/service-operations/settings/change-freeze',wait_until='networkidle')
-        window=page.get_by_role('button',name='Choose date window',exact=True)
-        expect(window).to_have_count(1);window.click()
+        # No separate summary button: the start field opens the range picker.
+        expect(page.locator('.ui-date-window')).to_have_count(0)
+        window=page.locator('[name=starts_at]');window.click()
         dialog=page.get_by_role('dialog',name='Choose date window',exact=True)
         select_month(dialog,2028,2)
         choose(dialog,'2028-02-29')
@@ -69,7 +70,7 @@ def test_shared_calendar_real_save_and_constraints(server,width,dark,touch):
             assert freeze.ends_at.isoformat().startswith('2028-03-02T09:30')
         # Shared reference: native bounds, reverse selection, same-day ranges and single-date keyboard use.
         page.goto(base+'/admin/interface-standards',wait_until='networkidle')
-        page.get_by_role('button',name='Choose date window',exact=True).click()
+        page.locator('[name=start_date]').click()
         dialog=page.get_by_role('dialog',name='Choose date window',exact=True)
         select_month(dialog,2019,12)
         expect(dialog.locator('[data-calendar-date="2019-12-31"]')).to_be_disabled()
@@ -77,7 +78,7 @@ def test_shared_calendar_real_save_and_constraints(server,width,dark,touch):
         dialog.get_by_role('button',name='Apply dates',exact=True).click()
         expect(page.locator('[name=start_date]')).to_have_value('2028-03-10')
         expect(page.locator('[name=due_date]')).to_have_value('2028-03-20')
-        page.get_by_role('button',name='Choose date window',exact=True).click()
+        page.locator('[name=due_date]').click()
         choose(dialog,'2028-03-15');choose(dialog,'2028-03-15')
         dialog.get_by_role('button',name='Apply dates',exact=True).click()
         expect(page.locator('[name=due_date]')).to_have_value('2028-03-15')
@@ -126,5 +127,5 @@ def test_range_coverage_across_existing_forms(server,tmp_path,monkeypatch):
             field=page.locator(f'input[name="{start}"]').first
             expect(field).to_have_attribute('data-calendar-ready',__import__('re').compile(r'\d+'))
             expect(page.locator(f'input[name="{end}"]').first).to_have_attribute('data-calendar-ready',__import__('re').compile(r'\d+'))
-            assert page.locator('.ui-date-window').count()>=1,route
+            assert page.locator('.ui-date-window').count()==0,route
         browser.close()

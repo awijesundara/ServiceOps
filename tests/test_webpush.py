@@ -198,3 +198,29 @@ def test_test_notification_needs_a_subscription_and_queues_one(client, app):
         admin = User.query.filter_by(username="admin").one()
         assert Notification.query.filter_by(user_id=admin.id, title="Test notification").count() == 1
         assert OutboxEvent.query.filter_by(event_type="notification.created").count() >= 1
+
+
+def test_worker_delivers_notifications_linked_to_a_record(app, client, monkeypatch):
+    # The outbox worker has no request: building the record link must not fail delivery.
+    import httpx
+    from app import Ticket
+    login(client)
+    ua_key, body = _subscription_json()
+    client.post("/push/subscriptions", json=body)
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+    _FakeClient.sent, _FakeClient.status = [], 201
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        ticket = Ticket(number="INC0099001", kind="incident", title="Mention", description="x",
+                        requester_id=admin.id, tenant_id=admin.tenant_id, state="New", priority="P3")
+        db.session.add(ticket)
+        db.session.flush()
+        OutboxEvent.query.delete()
+        create_notification(admin.id, "Mentioned", "You were mentioned", tenant_id=admin.tenant_id,
+                            target_type="ticket", target_id=ticket.id)
+        db.session.commit()
+        process_outbox()
+        assert IntegrationDelivery.query.filter_by(channel="webpush", state="Delivered").count() == 1
+        ticket_id = ticket.id
+    message = json.loads(_decrypt(_FakeClient.sent[0][1], ua_key, b"0123456789abcdef"))
+    assert message["url"].endswith(f"/ticket/{ticket_id}")
