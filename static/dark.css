@@ -1555,26 +1555,46 @@ html.theme-dark.theme-dark body .wi-tabs button[aria-selected=true]{border-botto
 html.theme-dark .ui-hint{color:var(--muted)}
 html.theme-dark .ui-error{color:var(--red)}
 html.theme-dark .ui-panel{border:var(--border-width) solid var(--line);background:var(--white)}
-html.theme-dark .ui-calendar{border:var(--border-width) solid var(--line);background:var(--white);color:var(--ink);box-shadow:var(--shadow)}
-html.theme-dark .ui-calendar::backdrop{background:rgba(255,255,255,0.45)}
-html.theme-dark .ui-calendar button{border:var(--border-width) solid var(--line)}
-html.theme-dark .ui-calendar :is(button,input,select):focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
-html.theme-dark .ui-calendar :is(input,select){border:var(--border-width) solid var(--control-border);background:var(--white);color:var(--ink)}
-html.theme-dark .ui-calendar-grid :is(th,td){border:0}
-html.theme-dark .ui-calendar-grid th{color:var(--muted);background:transparent}
-html.theme-dark .ui-calendar-grid td{background:transparent}
-html.theme-dark .ui-calendar-grid button.ui-calendar-day{border-color:transparent;background:transparent;color:var(--ink)}
-html.theme-dark .ui-calendar-grid td[aria-selected=true]{background:var(--brand-teal-soft,var(--bg))}
-html.theme-dark .ui-calendar-grid button.selected{background:var(--green);color:var(--on-accent)}
-html.theme-dark .ui-calendar-grid button[aria-current=date]{border-color:var(--dk-accent)}
-html.theme-dark .ui-calendar-stages button{background:var(--bg);color:var(--ink)}
-html.theme-dark .ui-calendar-stages button[aria-pressed=true]{border-color:var(--dk-accent)}
+html.theme-dark .ui-calendar{border:var(--border-width) solid var(--line);background:var(--white);color:var(--ink);box-shadow:0 24px 60px rgba(0,0,0,0.696),0 2px 6px rgba(0,0,0,0.256)}
+html.theme-dark .ui-calendar::backdrop{background:rgba(255,255,255,0.42)}
+html.theme-dark .ui-calendar button{color:inherit;background:transparent;border:var(--border-width) solid transparent}
+html.theme-dark .ui-calendar :is(button,input,select):focus-visible{outline:var(--focus-width) solid var(--cal-accent)}
+html.theme-dark .ui-calendar :is(input,select){color:var(--ink);background:var(--white)}
+html.theme-dark .ui-calendar-instruction{color:var(--muted)}
+html.theme-dark .ui-calendar-icon{color:var(--muted)}
+html.theme-dark .ui-calendar-icon:hover:not(:disabled){background:var(--bg);color:var(--ink)}
+html.theme-dark .ui-calendar-end{border:var(--border-width) solid var(--line);background:var(--bg)}
+html.theme-dark .ui-calendar-end.is-active{border-color:var(--cal-accent);background:var(--white);box-shadow:0 0 0 1px var(--cal-accent)}
+html.theme-dark .ui-calendar .ui-calendar-end-date{border:0;background:transparent}
+html.theme-dark .ui-calendar-end-label{color:var(--muted)}
+html.theme-dark .ui-calendar-end.is-active .ui-calendar-end-label{color:var(--ink)}
+html.theme-dark .ui-calendar-time{color:var(--muted)}
+html.theme-dark .ui-calendar-time input{border:var(--border-width) solid var(--control-border)}
+html.theme-dark .ui-calendar-period select,html.theme-dark .ui-calendar-period input{border:var(--border-width) solid transparent;background:transparent}
+html.theme-dark .ui-calendar-period :is(select,input):hover{border-color:var(--line);background:var(--bg)}
+html.theme-dark .ui-calendar-grid :is(tr,tr:nth-child(n),tr:hover){background:transparent}
+html.theme-dark .ui-calendar-grid :is(th,td),html.theme-dark .ui-calendar-grid tr:hover td{border:0;background:transparent;box-shadow:none}
+html.theme-dark .ui-calendar-grid th{color:var(--muted)}
+html.theme-dark .ui-calendar-grid td:is(.in-range,.preview,.range-start,.range-end)::before{background:var(--cal-soft)}
+html.theme-dark .ui-calendar-grid td.weekend button.ui-calendar-day:not(.selected){color:var(--muted)}
+html.theme-dark .ui-calendar-grid button.ui-calendar-day:hover:not(:disabled):not(.selected){background:var(--bg);border-color:var(--line)}
+html.theme-dark .ui-calendar-grid button.ui-calendar-day[aria-current=date]::after{background:var(--cal-accent)}
+html.theme-dark .ui-calendar-grid button.ui-calendar-day.selected::after{background:var(--on-accent)}
+html.theme-dark .ui-calendar-grid button.ui-calendar-day.selected{background:var(--cal-accent);border-color:var(--cal-accent);color:var(--on-accent);box-shadow:0 2px 6px color-mix(in srgb,var(--cal-accent) 35%,transparent)}
+html.theme-dark .ui-calendar .ui-calendar-chip{border-color:var(--line);background:var(--white)}
+html.theme-dark .ui-calendar .ui-calendar-chip:hover:not(:disabled){border-color:var(--cal-accent);background:var(--cal-soft)}
+html.theme-dark .ui-calendar-summary{color:var(--muted)}
+html.theme-dark .ui-calendar-footer{border-top:var(--border-width) solid var(--line);background:var(--bg)}
+html.theme-dark .ui-calendar .ui-calendar-clear{color:var(--muted)}
+html.theme-dark .ui-calendar .ui-calendar-clear:hover{color:var(--ink)}
+html.theme-dark .ui-calendar-actions button:not(.ui-calendar-apply){border-color:var(--line);background:var(--white)}
+html.theme-dark .ui-calendar-actions button:not(.ui-calendar-apply):hover{border-color:var(--muted)}
+html.theme-dark .ui-calendar button.ui-calendar-apply{background:var(--cal-accent);color:var(--on-accent);border-color:var(--cal-accent)}
 html.theme-dark .service-feed{border-top:var(--border-width) solid var(--line);background:var(--bg)}
 html.theme-dark .service-feed-label{color:var(--dk-accent);background:var(--brand-teal-soft,var(--white))}
 html.theme-dark .service-feed-item .portal-status-row{border:0}
 html.theme-dark .service-feed-item a.service-headline{color:var(--ink)}
 html.theme-dark .service-feed-item a.service-headline:focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
-html.theme-dark .ui-calendar button.ui-calendar-apply{background:var(--green);color:var(--on-accent);border-color:var(--dk-accent)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

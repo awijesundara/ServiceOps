@@ -78,6 +78,10 @@
    "id": "0U / unpositioned power units"
   },
   {
+   "id": "1 day",
+   "javascript": true
+  },
+  {
    "id": "1 file"
   },
   {
@@ -4811,6 +4815,10 @@
    "id": "Enabled"
   },
   {
+   "id": "End",
+   "javascript": true
+  },
+  {
    "id": "End ({zone})"
   },
   {
@@ -6089,6 +6097,10 @@
   },
   {
    "id": "In Use"
+  },
+  {
+   "id": "In a week",
+   "javascript": true
   },
   {
    "id": "In order"
@@ -7823,6 +7835,14 @@
   },
   {
    "id": "Next 14 days"
+  },
+  {
+   "id": "Next 30 days",
+   "javascript": true
+  },
+  {
+   "id": "Next 7 days",
+   "javascript": true
   },
   {
    "id": "Next approver: {manager_chain}"
@@ -10387,6 +10407,10 @@
   },
   {
    "id": "Queued"
+  },
+  {
+   "id": "Quick choices",
+   "javascript": true
   },
   {
    "id": "Quick filters"
@@ -13340,7 +13364,8 @@
    "id": "Star project"
   },
   {
-   "id": "Start"
+   "id": "Start",
+   "javascript": true
   },
   {
    "id": "Start ({zone})"
@@ -14833,6 +14858,10 @@
   },
   {
    "id": "Tokyo"
+  },
+  {
+   "id": "Tomorrow",
+   "javascript": true
   },
   {
    "id": "Too many invalid API token attempts. Try again later."
@@ -17357,6 +17386,10 @@
   },
   {
    "id": "{count} contracts still reference this supplier. Deactivate it instead."
+  },
+  {
+   "id": "{count} days",
+   "javascript": true
   },
   {
    "id": "{count} decision is yours to make"

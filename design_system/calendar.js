@@ -36,59 +36,76 @@
   dialog.setAttribute('aria-describedby', 'ui-calendar-instruction');
   const title = element('h2', tr('Choose dates'));
   title.id = 'ui-calendar-title';
-  const close = button(tr('Cancel'), () => dialog.close());
-  const head = element('div', '', 'ui-calendar-head');
-  head.append(title, close);
-  const instruction = element('p', '', 'ui-hint');
+  const instruction = element('p', '', 'ui-calendar-instruction');
   instruction.id = 'ui-calendar-instruction';
+  const heading = element('div', '', 'ui-calendar-heading');
+  heading.append(title, instruction);
+  const dismiss = button('×', () => dialog.close());
+  dismiss.classList.add('ui-calendar-icon', 'ui-calendar-dismiss');
+  dismiss.setAttribute('aria-label', tr('Close'));
+  const head = element('div', '', 'ui-calendar-head');
+  head.append(heading, dismiss);
+  // Start and end cards: the date (press to pick it) with its time underneath.
   const stages = element('div', '', 'ui-calendar-stages');
   const startStage = button(tr('Start date'), () => setStage(0));
   const endStage = button(tr('End date'), () => setStage(1));
-  stages.append(startStage, endStage);
+  const ends = [startStage, endStage].map(stage => {
+    const card = element('div', '', 'ui-calendar-end');
+    stage.classList.add('ui-calendar-end-date');
+    card.append(stage);
+    return card;
+  });
+  stages.append(...ends);
   const nav = element('div', '', 'ui-calendar-nav');
   const prev = button('‹', () => moveMonth(-1));
+  prev.classList.add('ui-calendar-icon');
   prev.setAttribute('aria-label', tr('Previous month'));
   const next = button('›', () => moveMonth(1));
+  next.classList.add('ui-calendar-icon');
   next.setAttribute('aria-label', tr('Next month'));
-  const monthLabel = element('label', tr('Month'));
   const month = element('select'); month.dataset.plain = ''; month.setAttribute('aria-label', tr('Month'));
   for (let i = 0; i < 12; i++) {
     const option = element('option', new Intl.DateTimeFormat(locale, {month: 'long'}).format(new Date(2020, i, 1)));
     option.value = String(i); month.append(option);
   }
   month.addEventListener('change', () => { state.month = Number(month.value); render(); });
-  monthLabel.append(month);
-  const yearLabel = element('label', tr('Year'));
   const year = element('input'); year.type = 'number'; year.setAttribute('aria-label', tr('Year')); year.min = '1'; year.max = '9999';
+  year.inputMode = 'numeric';
   year.addEventListener('change', () => {
     const value = Number(year.value);
     if (Number.isInteger(value) && value >= 1 && value <= 9999) { state.year = value; render(); }
     else year.reportValidity();
   });
-  yearLabel.append(year);
-  nav.append(prev, monthLabel, yearLabel, next);
+  const period = element('div', '', 'ui-calendar-period');
+  period.append(month, year);
+  nav.append(prev, period, next);
   const grid = element('table', '', 'ui-calendar-grid'); grid.setAttribute('role', 'grid');
+  const presets = element('div', '', 'ui-calendar-presets');
+  presets.setAttribute('role', 'group'); presets.setAttribute('aria-label', tr('Quick choices'));
   const times = element('div', '', 'ui-calendar-times');
   const summary = element('p', '', 'ui-calendar-summary'); summary.setAttribute('role', 'status');
-  const error = element('p', '', 'ui-error'); error.setAttribute('role', 'alert');
+  const error = element('p', '', 'ui-error ui-calendar-error'); error.setAttribute('role', 'alert');
   function safely(action) {
     try { return action(); }
     catch (failure) {
       failed = true;
       console.error('Shared calendar failed; native date inputs remain available', failure?.name || 'Error');
       document.querySelectorAll('.ui-date-input').forEach(input => input.classList.remove('ui-date-input'));
-      document.querySelectorAll('.ui-date-window').forEach(trigger => { trigger.hidden = true; });
       if (dialog.open) dialog.close();
       const feedback = element('p', tr('The calendar is unavailable. You can still type dates or use your browser calendar.'), 'flash error');
       feedback.setAttribute('role', 'alert');
       (document.querySelector('main') || document.body).prepend(feedback);
     }
   }
-  const footer = element('div', '', 'ui-cluster');
+  const footer = element('div', '', 'ui-calendar-footer');
   const clear = button(tr('Clear dates'), () => { state.dates = state.fields.map(() => ''); state.stage = 0; render(); });
+  clear.classList.add('ui-calendar-clear');
+  const close = button(tr('Cancel'), () => dialog.close());
   const apply = button(tr('Apply dates'), commit); apply.classList.add('ui-calendar-apply');
-  footer.append(clear, apply);
-  dialog.append(head, instruction, stages, nav, grid, times, summary, error, footer);
+  const actions = element('div', '', 'ui-calendar-actions');
+  actions.append(close, apply);
+  footer.append(clear, actions);
+  dialog.append(head, stages, nav, grid, presets, times, summary, error, footer);
   document.body.append(dialog);
   dialog.addEventListener('close', () => {
     if (state) {
@@ -96,6 +113,8 @@
       if (state.opener?.isConnected) state.opener.focus();
     }
   });
+  // Clicking the backdrop (outside the panel) closes without changes.
+  dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
   function currentDate(day = 1) {
     const date = new Date(2000, state.month, day, 12); date.setFullYear(state.year); return date;
   }
@@ -130,32 +149,58 @@
     render(value);
     if (state.fields.length === 1 || state.dates.every(Boolean)) apply.focus();
   }
+  function days(from, to) {
+    const a = dateOf(from), b = dateOf(to);
+    return a && b ? Math.round((b - a) / 86400000) + 1 : 0;
+  }
+  function shift(value, count) {
+    const date = dateOf(value); date.setDate(date.getDate() + count); return iso(date);
+  }
+  function preset(label, values) {
+    const node = button(label, () => {
+      state.dates = values.slice(); state.stage = values.length - 1;
+      const date = dateOf(values[0]); state.month = date.getMonth(); state.year = date.getFullYear();
+      error.textContent = ''; render(); apply.focus();
+    });
+    node.classList.add('ui-calendar-chip');
+    node.disabled = values.some((value, i) => !inBounds(value, state.fields[i]));
+    return node;
+  }
   function render(focusDate) {
     month.value = String(state.month); year.value = String(state.year);
     prev.disabled = state.year === 1 && state.month === 0;
     next.disabled = state.year === 9999 && state.month === 11;
     const range = state.fields.length === 2;
+    dialog.classList.toggle('is-range', range);
     title.textContent = range ? tr('Choose date window') : tr('Choose date');
     stages.hidden = !range;
     instruction.textContent = range ? (state.stage === 0 ? tr('Select the start date, then select the end date in this calendar.') : tr('Select the end date. Use Apply dates to confirm.')) : tr('Select a date, then use Apply dates to confirm.');
-    [startStage, endStage].forEach((node, i) => node.setAttribute('aria-pressed', String(state.stage === i)));
-    startStage.textContent = `${tr('Start date')}: ${formatted(state.dates[0])}`;
-    endStage.textContent = `${tr('End date')}: ${formatted(state.dates[1])}`;
+    [startStage, endStage].forEach((node, i) => {
+      node.setAttribute('aria-pressed', String(state.stage === i));
+      ends[i].classList.toggle('is-active', state.stage === i);
+      node.setAttribute('aria-label', `${i ? tr('End date') : tr('Start date')}: ${formatted(state.dates[i])}`);
+      node.replaceChildren(element('span', i ? tr('End') : tr('Start'), 'ui-calendar-end-label'),
+        element('span', state.dates[i] ? formatted(state.dates[i]) : tr('Not selected'), 'ui-calendar-end-value'));
+    });
     grid.replaceChildren();
     const caption = new Intl.DateTimeFormat(locale, {month: 'long', year: 'numeric'}).format(currentDate());
     grid.setAttribute('aria-label', caption);
     const thead = element('thead'), headings = element('tr');
     for (let i = 0; i < 7; i++) {
-      const th = element('th', new Intl.DateTimeFormat(locale, {weekday: 'short'}).format(new Date(2024, 0, i + 1)));
-      th.scope = 'col'; headings.append(th);
+      const date = new Date(2024, 0, i + 1);
+      const th = element('th', new Intl.DateTimeFormat(locale, {weekday: 'narrow'}).format(date));
+      th.scope = 'col'; th.title = new Intl.DateTimeFormat(locale, {weekday: 'long'}).format(date);
+      th.setAttribute('abbr', th.title); headings.append(th);
     }
     thead.append(headings); grid.append(thead);
     const tbody = element('tbody');
     const offset = (currentDate().getDay() + 6) % 7;
     const count = new Date(state.year, state.month + 1, 0).getDate();
     const today = iso(new Date());
+    const [from, to] = state.dates;
     let first = null;
-    for (let week = 0; week < 6; week++) {
+    const weeks = Math.ceil((offset + count) / 7);
+    for (let week = 0; week < weeks; week++) {
       const row = element('tr');
       for (let dow = 0; dow < 7; dow++) {
         const cell = element('td');
@@ -170,8 +215,15 @@
           day.tabIndex = -1;
           if (!day.disabled && !first) first = day;
           const selected = state.dates.includes(value);
-          cell.setAttribute('aria-selected', String(Boolean(selected || (range && state.dates[0] && state.dates[1] && value > state.dates[0] && value < state.dates[1]))));
+          const between = range && from && to && value > from && value < to;
+          cell.setAttribute('aria-selected', String(Boolean(selected || between)));
           if (selected) day.classList.add('selected');
+          if (between) cell.classList.add('in-range');
+          if (range && from && to && from !== to) {
+            if (value === from) cell.classList.add('range-start');
+            if (value === to) cell.classList.add('range-end');
+          }
+          if (dow > 4) cell.classList.add('weekend');
           if (value === today) day.setAttribute('aria-current', 'date');
           cell.append(day);
         }
@@ -183,17 +235,40 @@
     const preferred = focusDate || state.dates[state.stage] || (today.startsWith(`${pad(state.year)}-${pad(state.month + 1)}`) ? today : '');
     const active = [...grid.querySelectorAll('button')].find(node => node.dataset.calendarDate === preferred && !node.disabled) || first;
     if (active) { active.tabIndex = 0; if (focusDate) active.focus(); }
+    presets.replaceChildren(...(range
+      ? [preset(tr('Today'), [today, today]), preset(tr('Tomorrow'), [shift(today, 1), shift(today, 1)]),
+         preset(tr('Next 7 days'), [today, shift(today, 6)]), preset(tr('Next 30 days'), [today, shift(today, 29)])]
+      : [preset(tr('Today'), [today]), preset(tr('Tomorrow'), [shift(today, 1)]), preset(tr('In a week'), [shift(today, 7)])]));
     times.replaceChildren();
+    ends.forEach(card => card.querySelector('.ui-calendar-time')?.remove());
     state.fields.forEach((input, index) => {
       if (input.type !== 'datetime-local') return;
-      const label = element('label', range ? (index === 0 ? tr('Start time') : tr('End time')) : tr('Time'));
+      const label = element('label', range ? (index === 0 ? tr('Start time') : tr('End time')) : tr('Time'), 'ui-calendar-time');
       const time = element('input'); time.type = 'time'; time.value = state.times[index];
       time.step = input.step || '60'; time.required = true;
       time.addEventListener('input', () => { state.times[index] = time.value; });
-      label.append(time); times.append(label);
+      label.append(time);
+      if (range) ends[index].append(label); else times.append(label);
     });
-    summary.textContent = state.dates.map(formatted).join(' → ');
+    times.hidden = !times.children.length;
+    if (range && from && to) {
+      const length = days(from, to);
+      summary.textContent = `${formatted(from)} → ${formatted(to)} · ${length === 1 ? tr('1 day') : tr('{count} days', {count: length})}`;
+    } else {
+      summary.textContent = state.dates.map(formatted).join(' → ');
+    }
   }
+  // While picking the end date, preview the window under the pointer.
+  grid.addEventListener('pointerover', event => {
+    const target = event.target.closest('[data-calendar-date]');
+    grid.querySelectorAll('.preview').forEach(cell => cell.classList.remove('preview'));
+    if (!target || !state || state.fields.length !== 2 || state.stage !== 1 || !state.dates[0] || state.dates[1]) return;
+    const [low, high] = [state.dates[0], target.dataset.calendarDate].sort();
+    grid.querySelectorAll('[data-calendar-date]').forEach(day => {
+      if (day.dataset.calendarDate > low && day.dataset.calendarDate < high) day.parentElement.classList.add('preview');
+    });
+  });
+  grid.addEventListener('pointerleave', () => grid.querySelectorAll('.preview').forEach(cell => cell.classList.remove('preview')));
   grid.addEventListener('keydown', event => {
     const target = event.target.closest('[data-calendar-date]');
     if (!target) return;
