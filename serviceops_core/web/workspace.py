@@ -596,7 +596,9 @@ def register(app):
         from serviceops_models import WebPushSubscription
         if not core.setting_bool("WEB_PUSH_ENABLED", True):
             abort(404)
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description=tr("A JSON object is required."))
         endpoint = str(body.get("endpoint") or "")
         keys = body.get("keys") if isinstance(body.get("keys"), dict) else {}
         if not webpush.endpoint_allowed(endpoint):
@@ -626,7 +628,9 @@ def register(app):
     def web_push_unsubscribe():
         import hashlib
         from serviceops_models import WebPushSubscription
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, description=tr("A JSON object is required."))
         digest = hashlib.sha256(str(body.get("endpoint") or "").encode()).hexdigest()
         removed = WebPushSubscription.query.filter_by(endpoint_hash=digest, user_id=current_user.id).delete()
         if removed:

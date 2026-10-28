@@ -28,7 +28,7 @@ from sqlalchemy import func
 
 import app as core
 from serviceops_core.localization import tr
-from serviceops_core.mfa import record_second_factor_failure, verify_second_factor
+from serviceops_core.mfa import account_locked, record_second_factor_failure, verify_second_factor
 from serviceops_core.public_url import public_url_for
 from serviceops_models import PasskeyChallenge, User, db, now
 
@@ -171,6 +171,11 @@ def register(app):
         if not user or not core.account_usable(user):
             db.session.commit()
             abort(403, description=tr("This account or its organization is not active."))
+        if account_locked(user):
+            core.audit("login_blocked", user.username, "provider=keycloak; platform=mobile; reason=locked",
+                       user_id=user.id, tenant_id=user.tenant_id)
+            db.session.commit()
+            abort(423, description=tr("This account is temporarily locked."))
         core.audit("login", user.username, "provider=keycloak; platform=mobile",
                    user_id=user.id, tenant_id=user.tenant_id)
         return _session_payload(user, "keycloak")

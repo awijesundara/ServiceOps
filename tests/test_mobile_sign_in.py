@@ -166,3 +166,27 @@ def test_keycloak_start_validates_the_app_request(app, client, keycloak):
     assert client.get("/auth/keycloak/mobile/start?code_challenge=short&state=state-123456").status_code == 400
     assert client.get(f"/auth/keycloak/mobile/start?code_challenge={pkce()[1]}&state=a b").status_code == 400
     assert client.get("/auth/keycloak/mobile/callback?code=x").status_code == 400  # nothing pending
+
+
+def test_keycloak_exchange_rechecks_lockout_and_consumes_refused_code(app, client, keycloak):
+    from datetime import timedelta
+    from serviceops_models import APIClient, PasskeyChallenge, now
+
+    verifier, challenge = pkce()
+    result = start_and_finish(client, challenge, "state-lockout")
+    with app.app_context():
+        user = User.query.filter_by(username="kc.user").one()
+        user.locked_until = now() + timedelta(minutes=10)
+        db.session.commit()
+        before = APIClient.query.filter_by(acting_user_id=user.id, client_kind="mobile").count()
+    response = client.post("/api/v1/auth/mobile/keycloak/exchange",
+                           json={"code": result["code"], "code_verifier": verifier}, headers=IOS)
+    assert response.status_code == 423
+    with app.app_context():
+        user = User.query.filter_by(username="kc.user").one()
+        assert APIClient.query.filter_by(acting_user_id=user.id, client_kind="mobile").count() == before
+        assert db.session.get(PasskeyChallenge, result["code"]) is None
+        user.locked_until = None
+        db.session.commit()
+    assert client.post("/api/v1/auth/mobile/keycloak/exchange",
+                       json={"code": result["code"], "code_verifier": verifier}).status_code == 401

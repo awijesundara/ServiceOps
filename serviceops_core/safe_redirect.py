@@ -24,7 +24,11 @@ def redirect_internal(target, fallback, code=302):
 def redirect_to_referrer(fallback, code=302):
     """Return to the page that submitted this request when it is one of this
     application's own pages; otherwise go to `fallback`."""
-    parts = urlsplit(request.referrer or "")
+    try:
+        parts = urlsplit(request.referrer or "")
+    except ValueError:
+        # Referer is client input; invalid authorities must not fail a saved action.
+        return redirect(fallback, code=code)
     if parts.scheme in {"http", "https"} and parts.netloc == request.host:
         relative = urlunsplit(("", "", parts.path or "/", parts.query, parts.fragment))
         return redirect_internal(relative, fallback, code=code)
