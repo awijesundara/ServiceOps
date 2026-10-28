@@ -2107,17 +2107,9 @@ def deliver_smtp(event):
         and notification_event_type not in NON_MUTABLE_EVENT_TYPES
     ):
         return False
-    provider = setting_value("SMTP_PROVIDER", "generic")
-    provider_defaults = {
-        "google_workspace_relay": ("smtp-relay.gmail.com", "none"),
-        "google_workspace_app_password": ("smtp.gmail.com", "password"),
-        "google_workspace_oauth2": ("smtp.gmail.com", "oauth2"),
-    }
-    default_host, default_auth = provider_defaults.get(provider, ("", "password"))
-    host = setting_value("SMTP_HOST", "") or default_host
-    sender = setting_value("SMTP_FROM", "")
-    if not host or not sender:
-        raise RuntimeError("SMTP host and from address are required.")
+    sender = setting_value("SMTP_FROM", "") or setting_value("MS_SENDER_MAILBOX", "")
+    if not sender:
+        raise RuntimeError("An email from address is required.")
     message = EmailMessage()
     message["From"] = formataddr((setting_value("SMTP_FROM_NAME", "ServiceOps"), sender))
     message["To"] = user.email
@@ -2125,62 +2117,14 @@ def deliver_smtp(event):
     reply_to = setting_value("SMTP_REPLY_TO", "")
     if reply_to:
         message["Reply-To"] = reply_to
-    message["X-ServiceOps-Event-ID"] = event.event_id
+    message["X-ServiceOps-Event-ID"] = single_line_header(event.event_id)
     message["Auto-Submitted"] = "auto-generated"
     message.set_content(payload["body"])
-    security = setting_value(
-        "SMTP_SECURITY", "starttls" if setting_bool("SMTP_STARTTLS", True) else "none"
-    )
-    port = setting_int("SMTP_PORT", 465 if security == "tls" else 587)
-    timeout = setting_int("SMTP_TIMEOUT_SECONDS", 10)
-    smtp_class = smtplib.SMTP_SSL if security == "tls" else smtplib.SMTP
-    kwargs = {"timeout": timeout}
-    if security == "tls":
-        kwargs["context"] = ssl.create_default_context()
-    smtp_proxy_url = resolve_smtp_proxy_url()
-    smtp_proxies = {"http": smtp_proxy_url, "https": smtp_proxy_url} if smtp_proxy_url else None
-    # tunnel_through_proxy(None) is a deliberate no-op (see its docstring),
-    # so this always wraps rather than branching on whether a proxy is
-    # configured -- smtplib has no native proxy support (SMTP isn't HTTP),
-    # so reaching an external mail relay in a deployment without direct
-    # internet access requires tunneling the raw TCP connection through an
-    # HTTP(S) proxy's CONNECT method.
-    with tunnel_through_proxy(smtp_proxy_url), smtp_class(host, port, **kwargs) as smtp:
-        smtp.ehlo()
-        if security == "starttls":
-            smtp.starttls(context=ssl.create_default_context())
-            smtp.ehlo()
-        username = setting_value("SMTP_USERNAME", "")
-        auth_mode = setting_value("SMTP_AUTH_MODE", default_auth)
-        if security == "none" and auth_mode != "none":
-            raise RuntimeError("SMTP authentication requires STARTTLS or implicit TLS.")
-        if auth_mode == "oauth2":
-            client_id = setting_value("SMTP_OAUTH_CLIENT_ID", "")
-            client_secret = setting_value("SMTP_OAUTH_CLIENT_SECRET", "")
-            refresh_token = setting_value("SMTP_OAUTH_REFRESH_TOKEN", "")
-            if not all((username, client_id, client_secret, refresh_token)):
-                raise RuntimeError("Google OAuth username, client ID, client secret and refresh token are required.")
-            token_response = requests.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "client_id": client_id, "client_secret": client_secret,
-                    "refresh_token": refresh_token, "grant_type": "refresh_token",
-                },
-                proxies=smtp_proxies, timeout=timeout,
-            )
-            token_response.raise_for_status()
-            access_token = token_response.json().get("access_token")
-            if not access_token:
-                raise RuntimeError("Google OAuth token response did not include an access token.")
-            auth = base64.b64encode(
-                f"user={username}\x01auth=Bearer {access_token}\x01\x01".encode()
-            ).decode()
-            code, response = smtp.docmd("AUTH", "XOAUTH2 " + auth)
-            if code not in {235, 250}:
-                raise RuntimeError(f"Google OAuth SMTP authentication failed ({code}).")
-        elif auth_mode == "password" and username:
-            smtp.login(username, setting_value("SMTP_PASSWORD", ""))
-        smtp.send_message(message)
+    # serviceops_core.mail picks the transport (MAIL_TRANSPORT): any SMTP
+    # server or relay, Microsoft Graph, Amazon SES, an HTTP email API,
+    # sendmail or a pickup directory.
+    from serviceops_core.mail import send as send_mail
+    send_mail(message)
     return True
 
 

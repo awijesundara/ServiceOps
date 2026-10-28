@@ -1261,6 +1261,24 @@
    "id": "Always tries your own AI first, even if it is busy."
   },
   {
+   "id": "Amazon SES (API)"
+  },
+  {
+   "id": "Amazon SES (SMTP credentials)"
+  },
+  {
+   "id": "Amazon SES access key ID (blank uses the pod or instance IAM role)"
+  },
+  {
+   "id": "Amazon SES configuration set"
+  },
+  {
+   "id": "Amazon SES region"
+  },
+  {
+   "id": "Amazon SES secret access key"
+  },
+  {
    "id": "An SLA definition with that name already exists."
   },
   {
@@ -1302,6 +1320,9 @@
   },
   {
    "id": "Any"
+  },
+  {
+   "id": "Any SMTP relay, Microsoft 365, Google Workspace, Amazon SES, SendGrid, Mailgun, Postmark or sendmail."
   },
   {
    "id": "Any compatible service"
@@ -2004,6 +2025,9 @@
   },
   {
    "id": "Breadcrumb"
+  },
+  {
+   "id": "Brevo (SMTP)"
   },
   {
    "id": "Bronze Silver Gold"
@@ -4641,6 +4665,9 @@
    "id": "ENTERPRISE WORKFLOWS"
   },
   {
+   "id": "EU"
+  },
+  {
    "id": "EVENT STREAM"
   },
   {
@@ -4737,10 +4764,10 @@
    "id": "Email delivery proxy"
   },
   {
-   "id": "Email notifications"
+   "id": "Email delivery timeout (seconds)"
   },
   {
-   "id": "Email provider"
+   "id": "Email notifications"
   },
   {
    "id": "Employee ID"
@@ -4876,6 +4903,9 @@
   },
   {
    "id": "Enter a valid email address that no other account uses."
+  },
+  {
+   "id": "Enter a valid email address to send the test to."
   },
   {
    "id": "Enter a valid email address."
@@ -5132,6 +5162,9 @@
    "id": "Exact state, e.g. 'In Progress' or 'Resolved'."
   },
   {
+   "id": "Exchange Server (on-premises)"
+  },
+  {
    "id": "Exchange a verified Cloudflare Access token for a mobile session"
   },
   {
@@ -5231,6 +5264,9 @@
   },
   {
    "id": "Failed"
+  },
+  {
+   "id": "Failed at step:"
   },
   {
    "id": "Failed logins before lockout"
@@ -5579,6 +5615,9 @@
    "id": "Generated live from the running instance's contract at"
   },
   {
+   "id": "Generic SMTP server"
+  },
+  {
    "id": "Get a breakdown of work by type."
   },
   {
@@ -5605,6 +5644,12 @@
   },
   {
    "id": "Give these to the backup job"
+  },
+  {
+   "id": "Gmail / Google Workspace (OAuth2)"
+  },
+  {
+   "id": "Gmail / Google Workspace (app password)"
   },
   {
    "id": "Go to scheduled automation"
@@ -5667,13 +5712,13 @@
    "id": "Google OAuth refresh token"
   },
   {
+   "id": "Google OAuth2"
+  },
+  {
    "id": "Google Sheet URL"
   },
   {
-   "id": "Google Workspace relay, Gmail OAuth, app passwords, or standard SMTP."
-  },
-  {
-   "id": "Google Workspace, Gmail OAuth, app passwords, and SMTP"
+   "id": "Google Workspace SMTP relay (IP allow-list)"
   },
   {
    "id": "Google lists no free-tier allowance for this model.",
@@ -5902,10 +5947,16 @@
    "id": "How did we do?"
   },
   {
+   "id": "How email is sent"
+  },
+  {
    "id": "How it works"
   },
   {
    "id": "How mapping, attachments, and re-runs work"
+  },
+  {
+   "id": "How outgoing notification email is sent — any SMTP server or relay, Microsoft 365, Google Workspace, Amazon SES, SendGrid, Mailgun, Postmark, a local sendmail, or a pickup directory — and the sender identity."
   },
   {
    "id": "How requests are shared"
@@ -6058,6 +6109,9 @@
   },
   {
    "id": "Implementation, test, and backout plans are recorded on the change's first task — see"
+  },
+  {
+   "id": "Implicit TLS (SMTPS)"
   },
   {
    "id": "Import"
@@ -6979,6 +7033,9 @@
    "javascript": true
   },
   {
+   "id": "Local sendmail program"
+  },
+  {
    "id": "Local time"
   },
   {
@@ -7095,6 +7152,18 @@
   },
   {
    "id": "Mailboxes · {instance_name}"
+  },
+  {
+   "id": "Mailgun (API)"
+  },
+  {
+   "id": "Mailgun (SMTP)"
+  },
+  {
+   "id": "Mailgun region"
+  },
+  {
+   "id": "Mailgun sending domain"
   },
   {
    "id": "Maintenance"
@@ -7305,7 +7374,46 @@
    "id": "Metric"
   },
   {
+   "id": "Microsoft 365 (Graph API)"
+  },
+  {
+   "id": "Microsoft 365 (worldwide, including GCC)"
+  },
+  {
+   "id": "Microsoft 365 SMTP AUTH (OAuth2, app registration)"
+  },
+  {
+   "id": "Microsoft 365 SMTP AUTH (password, legacy)"
+  },
+  {
+   "id": "Microsoft 365 connector relay (MX endpoint, IP or certificate)"
+  },
+  {
+   "id": "Microsoft 365 operated by 21Vianet (China)"
+  },
+  {
+   "id": "Microsoft Entra tenant ID"
+  },
+  {
+   "id": "Microsoft OAuth2 (app registration)"
+  },
+  {
    "id": "Microsoft Teams"
+  },
+  {
+   "id": "Microsoft application (client) ID"
+  },
+  {
+   "id": "Microsoft client certificate (PEM with private key; used instead of the secret)"
+  },
+  {
+   "id": "Microsoft client secret"
+  },
+  {
+   "id": "Microsoft cloud"
+  },
+  {
+   "id": "Microsoft sender mailbox (Graph; blank uses the from address)"
   },
   {
    "id": "Midnight"
@@ -8551,6 +8659,12 @@
    "id": "None (default access applies)"
   },
   {
+   "id": "None (internal relay only)"
+  },
+  {
+   "id": "None (relay trusts this server)"
+  },
+  {
    "id": "None recorded"
   },
   {
@@ -9677,6 +9791,12 @@
    "id": "Pick what you are connecting to. You can change everything afterwards."
   },
   {
+   "id": "Pickup directory (.eml files)"
+  },
+  {
+   "id": "Pickup directory for .eml files"
+  },
+  {
    "id": "Pinata (free hosted pinning service)"
   },
   {
@@ -9913,6 +10033,15 @@
   },
   {
    "id": "PostgreSQL user"
+  },
+  {
+   "id": "Postmark (API)"
+  },
+  {
+   "id": "Postmark (SMTP)"
+  },
+  {
+   "id": "Postmark message stream"
   },
   {
    "id": "Potential service impact; downtime is not confirmed."
@@ -10296,6 +10425,9 @@
   },
   {
    "id": "Provider credential could not be decrypted."
+  },
+  {
+   "id": "Provider default"
   },
   {
    "id": "Provider rejected the request; check credentials, model and service availability."
@@ -11803,10 +11935,13 @@
    "id": "SLA status legend"
   },
   {
-   "id": "SMTP authentication"
+   "id": "SMTP CA certificate (PEM, for a server with an internal CA)"
   },
   {
-   "id": "SMTP connection and sender identity used for outgoing notifications."
+   "id": "SMTP EHLO name (blank uses this server's hostname)"
+  },
+  {
+   "id": "SMTP authentication"
   },
   {
    "id": "SMTP from"
@@ -11818,10 +11953,19 @@
    "id": "SMTP host"
   },
   {
+   "id": "SMTP host (blank uses the preset's host)"
+  },
+  {
    "id": "SMTP password"
   },
   {
    "id": "SMTP port"
+  },
+  {
+   "id": "SMTP port (0 uses the preset's port)"
+  },
+  {
+   "id": "SMTP provider preset"
   },
   {
    "id": "SMTP reply-to address"
@@ -11830,7 +11974,7 @@
    "id": "SMTP sender name"
   },
   {
-   "id": "SMTP timeout (seconds)"
+   "id": "SMTP server or relay"
   },
   {
    "id": "SMTP transport security"
@@ -11840,6 +11984,9 @@
   },
   {
    "id": "SMTP uses STARTTLS"
+  },
+  {
+   "id": "SMTP, Microsoft 365, Google Workspace, Amazon SES and email APIs"
   },
   {
    "id": "SNMP discovered   — line = relationship, \"+N more\" = collapsed connections, click a node (or search above) to expand and inspect its switch, neighbors, and ports"
@@ -11852,6 +11999,9 @@
   },
   {
    "id": "STALE / DOWN"
+  },
+  {
+   "id": "STARTTLS"
   },
   {
    "id": "SUPPORT"
@@ -11933,6 +12083,9 @@
   },
   {
    "id": "Save event choices"
+  },
+  {
+   "id": "Save first, then send a test with the saved settings. A failure shows the step that failed and the mail service’s own message."
   },
   {
    "id": "Save first, then test the saved connection. The test shows what NetBox holds and what the token may read, without writing anything."
@@ -12594,6 +12747,9 @@
    "id": "Send"
   },
   {
+   "id": "Send a test email"
+  },
+  {
    "id": "Send a test notification"
   },
   {
@@ -12603,14 +12759,32 @@
    "id": "Send test"
   },
   {
+   "id": "Send test email"
+  },
+  {
    "id": "Send the CF_Authorization JWT as Cf-Access-Jwt-Assertion; exactly one active account must match its email; MFA applies as for password sign-in."
+  },
+  {
+   "id": "Send to"
   },
   {
    "id": "Send to team"
   },
   {
+   "id": "SendGrid (API)"
+  },
+  {
+   "id": "SendGrid (SMTP)"
+  },
+  {
+   "id": "SendGrid, Mailgun or Postmark API key"
+  },
+  {
    "id": "Sending to the model",
    "javascript": true
+  },
+  {
+   "id": "Sendmail program path"
   },
   {
    "id": "Sends a controlled manual event for the selected ticket. Only rules explicitly configured to accept manual runs can respond."
@@ -13079,6 +13253,9 @@
   },
   {
    "id": "Skip RT TLS certificate verification (insecure — last resort, prefer the CA certificate above)"
+  },
+  {
+   "id": "Skip SMTP TLS certificate verification (insecure — last resort, prefer the CA certificate above)"
   },
   {
    "id": "Skip Snipe-IT TLS certificate verification (insecure — last resort, prefer the CA certificate above)"
@@ -13929,6 +14106,9 @@
   },
   {
    "id": "Test connection"
+  },
+  {
+   "id": "Test email accepted for delivery to"
   },
   {
    "id": "Test failed: {error}"
@@ -14879,6 +15059,9 @@
    "id": "Too many sign-in attempts. Try again later."
   },
   {
+   "id": "Too many test emails. Try again in a minute."
+  },
+  {
    "id": "Too many test notifications. Wait a minute and try again."
   },
   {
@@ -15028,7 +15211,16 @@
    "id": "Types of work"
   },
   {
+   "id": "US"
+  },
+  {
    "id": "US Eastern"
+  },
+  {
+   "id": "US Government DoD"
+  },
+  {
+   "id": "US Government GCC High"
   },
   {
    "id": "Unable to delete the attachment. Please try again."
@@ -15412,6 +15604,9 @@
   },
   {
    "id": "Username"
+  },
+  {
+   "id": "Username and password"
   },
   {
    "id": "Username or email"
@@ -16308,6 +16503,9 @@
   },
   {
    "id": "Your work · {instance_name}"
+  },
+  {
+   "id": "Zoho Mail (SMTP)"
   },
   {
    "id": "Zoom"

@@ -8,6 +8,11 @@ and the encryption cipher.
 """
 import json
 
+from serviceops_core.mail import (
+    AUTH_MODE_LABELS as SMTP_AUTH_MODE_LABELS, MICROSOFT_CLOUD_LABELS, SMTP_PROVIDER_LABELS,
+    TRANSPORT_LABELS as MAIL_TRANSPORT_LABELS, TRANSPORTS as MAIL_TRANSPORTS,
+)
+
 
 PROXY_MODE_CHOICES = ["default", "none", "custom"]
 PROXY_MODE_LABELS = {
@@ -167,8 +172,11 @@ SETTING_DEFINITIONS = {
     ],
     "email_delivery": [
         {"key": "SMTP_ENABLED", "label": "Enable SMTP delivery", "type": "bool", "default": "false", "live": True},
-        {"key": "SMTP_PROVIDER", "label": "Email provider", "type": "choice", "choices": ["generic", "google_workspace_relay", "google_workspace_app_password", "google_workspace_oauth2"], "default": "generic", "live": True},
-        {"key": "SMTP_HOST", "label": "SMTP host", "type": "text", "default": "", "live": True},
+        {"key": "MAIL_TRANSPORT", "label": "How email is sent", "type": "choice", "choices": list(MAIL_TRANSPORTS),
+         "choice_labels": MAIL_TRANSPORT_LABELS, "default": "smtp", "live": True},
+        {"key": "SMTP_PROVIDER", "label": "SMTP provider preset", "type": "choice", "choices": list(SMTP_PROVIDER_LABELS),
+         "choice_labels": SMTP_PROVIDER_LABELS, "default": "generic", "live": True},
+        {"key": "SMTP_HOST", "label": "SMTP host (blank uses the preset's host)", "type": "text", "default": "", "live": True},
         {"key": "APNS_ENABLED", "label": "Enable iOS push notifications", "type": "bool", "default": "false", "live": True},
         {"key": "APNS_TEAM_ID", "label": "Apple developer team ID", "type": "text", "default": "", "live": True},
         {"key": "APNS_KEY_ID", "label": "APNs key ID", "type": "text", "default": "", "live": True},
@@ -178,10 +186,13 @@ SETTING_DEFINITIONS = {
         {"key": "WEB_PUSH_ENABLED", "label": "Enable browser desktop notifications (Web Push)", "type": "bool", "default": "true", "live": True},
         {"key": "WEB_PUSH_CONTACT", "label": "Web Push contact email (shared with browser push services)", "type": "email", "default": "", "live": True},
         *proxy_policy_settings("WEB_PUSH", "browser push notification"),
-        {"key": "SMTP_PORT", "label": "SMTP port", "type": "int", "default": "587", "min": 1, "max": 65535, "live": True},
-        {"key": "SMTP_SECURITY", "label": "SMTP transport security", "type": "choice", "choices": ["starttls", "tls", "none"], "default": "starttls", "live": True},
+        {"key": "SMTP_PORT", "label": "SMTP port (0 uses the preset's port)", "type": "int", "default": "0", "min": 0, "max": 65535, "live": True},
+        {"key": "SMTP_SECURITY", "label": "SMTP transport security", "type": "choice", "choices": ["preset", "starttls", "tls", "none"],
+         "choice_labels": {"preset": "Provider default", "starttls": "STARTTLS", "tls": "Implicit TLS (SMTPS)", "none": "None (internal relay only)"},
+         "default": "preset", "live": True},
         {"key": "SMTP_STARTTLS", "label": "Require SMTP STARTTLS (legacy)", "type": "bool", "default": "true", "live": True},
-        {"key": "SMTP_AUTH_MODE", "label": "SMTP authentication", "type": "choice", "choices": ["none", "password", "oauth2"], "default": "password", "live": True},
+        {"key": "SMTP_AUTH_MODE", "label": "SMTP authentication", "type": "choice", "choices": ["preset", *SMTP_AUTH_MODE_LABELS],
+         "choice_labels": {"preset": "Provider default", **SMTP_AUTH_MODE_LABELS}, "default": "preset", "live": True},
         {"key": "SMTP_USERNAME", "label": "SMTP username", "type": "text", "default": "", "live": True},
         {"key": "SMTP_PASSWORD", "label": "SMTP password", "type": "secret", "default": "", "live": True},
         {"key": "SMTP_OAUTH_CLIENT_ID", "label": "Google OAuth client ID", "type": "text", "default": "", "live": True},
@@ -190,7 +201,31 @@ SETTING_DEFINITIONS = {
         {"key": "SMTP_FROM", "label": "SMTP from address", "type": "email", "default": "", "live": True},
         {"key": "SMTP_FROM_NAME", "label": "SMTP sender name", "type": "text", "default": "ServiceOps", "live": True},
         {"key": "SMTP_REPLY_TO", "label": "SMTP reply-to address", "type": "email", "default": "", "live": True},
-        {"key": "SMTP_TIMEOUT_SECONDS", "label": "SMTP timeout (seconds)", "type": "int", "default": "10", "min": 5, "max": 60, "live": True},
+        {"key": "SMTP_TIMEOUT_SECONDS", "label": "Email delivery timeout (seconds)", "type": "int", "default": "10", "min": 5, "max": 60, "live": True},
+        {"key": "SMTP_LOCAL_HOSTNAME", "label": "SMTP EHLO name (blank uses this server's hostname)", "type": "text", "default": "", "live": True},
+        {"key": "SMTP_CA_CERT", "label": "SMTP CA certificate (PEM, for a server with an internal CA)", "type": "text",
+         "multiline": True, "default": "", "live": True},
+        {"key": "SMTP_TLS_INSECURE", "label": "Skip SMTP TLS certificate verification (insecure — last resort, prefer the CA certificate above)",
+         "type": "bool", "default": "false", "live": True},
+        {"key": "MS_CLOUD", "label": "Microsoft cloud", "type": "choice", "choices": list(MICROSOFT_CLOUD_LABELS),
+         "choice_labels": MICROSOFT_CLOUD_LABELS, "default": "global", "live": True},
+        {"key": "MS_TENANT_ID", "label": "Microsoft Entra tenant ID", "type": "text", "default": "", "live": True},
+        {"key": "MS_CLIENT_ID", "label": "Microsoft application (client) ID", "type": "text", "default": "", "live": True},
+        {"key": "MS_CLIENT_SECRET", "label": "Microsoft client secret", "type": "secret", "default": "", "live": True},
+        {"key": "MS_CLIENT_CERTIFICATE", "label": "Microsoft client certificate (PEM with private key; used instead of the secret)",
+         "type": "secret", "multiline": True, "default": "", "live": True},
+        {"key": "MS_SENDER_MAILBOX", "label": "Microsoft sender mailbox (Graph; blank uses the from address)", "type": "email", "default": "", "live": True},
+        {"key": "SES_REGION", "label": "Amazon SES region", "type": "text", "default": "", "live": True},
+        {"key": "SES_ACCESS_KEY_ID", "label": "Amazon SES access key ID (blank uses the pod or instance IAM role)", "type": "text", "default": "", "live": True},
+        {"key": "SES_SECRET_ACCESS_KEY", "label": "Amazon SES secret access key", "type": "secret", "default": "", "live": True},
+        {"key": "SES_CONFIGURATION_SET", "label": "Amazon SES configuration set", "type": "text", "default": "", "live": True},
+        {"key": "MAIL_API_KEY", "label": "SendGrid, Mailgun or Postmark API key", "type": "secret", "default": "", "live": True},
+        {"key": "MAILGUN_DOMAIN", "label": "Mailgun sending domain", "type": "text", "default": "", "live": True},
+        {"key": "MAILGUN_REGION", "label": "Mailgun region", "type": "choice", "choices": ["us", "eu"],
+         "choice_labels": {"us": "US", "eu": "EU"}, "default": "us", "live": True},
+        {"key": "POSTMARK_MESSAGE_STREAM", "label": "Postmark message stream", "type": "text", "default": "outbound", "live": True},
+        {"key": "SENDMAIL_PATH", "label": "Sendmail program path", "type": "text", "default": "/usr/sbin/sendmail", "live": True},
+        {"key": "MAIL_PICKUP_DIRECTORY", "label": "Pickup directory for .eml files", "type": "text", "default": "", "live": True},
     ],
     "netbox_connection": [
         {"key": "NETBOX_ENABLED", "label": "Enable NetBox sync", "type": "bool", "default": "false", "live": True},
@@ -300,7 +335,7 @@ SETTING_GROUP_META = {
     "security": ("Security and limits", "Sessions, passwords, MFA, rate limits, uploads, malware scanning, and audit streaming."),
     "workspace_defaults": ("Workspace defaults", "Dashboard content and service-level warning thresholds."),
     "my_workspace_widgets": ("My Workspace widgets", "Which widgets are available for users to add to their personal My Workspace page."),
-    "email_delivery": ("Email delivery", "SMTP connection and sender identity used for outgoing notifications."),
+    "email_delivery": ("Email delivery", "How outgoing notification email is sent — any SMTP server or relay, Microsoft 365, Google Workspace, Amazon SES, SendGrid, Mailgun, Postmark, a local sendmail, or a pickup directory — and the sender identity."),
     "outbound_network": (
         "Outbound proxy & updates",
         "System egress proxy for AI models, notifications, email, integrations, object storage, mobile push, "
