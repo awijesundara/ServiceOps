@@ -16,8 +16,9 @@ def test_top_navigation_tracks_section(server,width,dark):
             page.goto(base+route)
             page.wait_for_load_state('networkidle')
             if dark:
-                page.evaluate("""() => {document.documentElement.classList.add('theme-dark');const link=document.createElement('link');link.rel='stylesheet';link.href='/static/dark.css';document.head.append(link)}""")
-                page.wait_for_function("Array.from(document.styleSheets).some(s=>s.href?.includes('dark.css'))")
+                # Resolve once the stylesheet has loaded. wait_for_function would evaluate a string,
+                # which the app's script-src 'self' policy (no unsafe-eval) refuses.
+                page.evaluate("""() => new Promise((resolve, reject) => {document.documentElement.classList.add('theme-dark');const link=document.createElement('link');link.rel='stylesheet';link.href='/static/dark.css';link.onload=resolve;link.onerror=reject;document.head.append(link)})""")
             nav=page.locator('.project-global-nav')
             assert nav.is_visible()
             assert nav.locator('a').all_text_contents()==['Your work','Projects','Filters','Plans','Create']

@@ -19,9 +19,9 @@ def test_shared_controls_and_current_project_tab(server, dark, width):
             page.wait_for_load_state("networkidle")
             if dark:
                 page.evaluate("document.documentElement.classList.add('theme-dark')")
-                page.evaluate("""() => {const link = document.createElement('link');
-                  link.rel='stylesheet';link.href='/static/dark.css';document.head.append(link)}""")
-                page.wait_for_function("() => Array.from(document.styleSheets).some(s=>s.href && s.href.includes('dark.css'))")
+                # Resolve on load: a string wait_for_function needs unsafe-eval, which the CSP refuses.
+                page.evaluate("""() => new Promise((resolve, reject) => {const link = document.createElement('link');
+                  link.rel='stylesheet';link.href='/static/dark.css';link.onload=resolve;link.onerror=reject;document.head.append(link)})""")
             current = page.locator('.project-tabs a[aria-current="page"]')
             assert current.count() == 1
             indicator = current.evaluate("e => {const s=getComputedStyle(e,'::after');return {height:s.height,background:s.backgroundColor}}")
