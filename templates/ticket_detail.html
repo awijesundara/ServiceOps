@@ -279,7 +279,7 @@
   {% endif %}
   {% if can_manage_ticket %}
   <details {% if not ticket.post_implementation_review %}open{% endif %}><summary>{{ tr('Update review') if ticket.post_implementation_review else tr('Record review') }}</summary>
-    <form method="post" action="{{ url_for('change_pir_update', ticket_id=ticket.id) }}" class="form-grid">
+    <form method="post" action="{{ url_for('change_pir_update', ticket_id=ticket.id) }}" class="form-grid" data-change-review-form>
       <label>{{ tr('Outcome') }}<select name="outcome" required>{% for value in pir_outcomes %}<option {% if ticket.post_implementation_review and ticket.post_implementation_review.outcome==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
       <label class="wide">{{ tr('Summary') }}<textarea name="summary" rows="3" required>{{ ticket.post_implementation_review.summary if ticket.post_implementation_review else '' }}</textarea></label>
       <label class="wide">{{ tr('Follow-up actions (optional)') }}<textarea name="follow_up_actions" rows="2">{{ ticket.post_implementation_review.follow_up_actions if ticket.post_implementation_review else '' }}</textarea></label>

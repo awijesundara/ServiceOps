@@ -11,7 +11,7 @@
     </div>
   </div>
   {% if can_manage_ticket or can_close %}
-  <form method="post" action="{{ url_for('change_pir_update', ticket_id=ticket.id) }}" class="change-review-form">
+  <form method="post" action="{{ url_for('change_pir_update', ticket_id=ticket.id) }}" class="change-review-form" data-change-review-form>
     <label>{{ tr('Outcome') }}
       <select name="outcome" required><option value="">{{ tr('Choose the outcome') }}</option>{% for value in pir_outcomes %}<option value="{{ value }}">{{ tr_value(value) }}</option>{% endfor %}</select>
     </label>

@@ -53,3 +53,19 @@ def test_a_refused_close_still_keeps_the_review_and_explains_why(client, app):
     assert "Review saved, but CHG0009803 could not be closed" in page
     with app.app_context():
         assert ChangePostImplementationReview.query.filter_by(ticket_id=ticket_id).count() == 1
+
+
+def test_the_record_update_button_saves_a_review_typed_in_the_review_form(client, app):
+    ticket_id = _resolved_change(app, "CHG0009804")
+    with app.app_context():
+        db.session.get(Ticket, ticket_id).state = "Review"
+        db.session.commit()
+    login(client)
+    page = client.get(f"/ticket/{ticket_id}").data.decode()
+    assert 'form="task-record-form"' in page
+    client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "Review", "impact": "Medium", "urgency": "Medium", "priority": "P3",
+        "pir_outcome": "Successful", "pir_summary": "Typed below, saved with Update."})
+    with app.app_context():
+        review = ChangePostImplementationReview.query.filter_by(ticket_id=ticket_id).one()
+        assert review.summary == "Typed below, saved with Update."

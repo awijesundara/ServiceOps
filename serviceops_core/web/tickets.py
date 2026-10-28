@@ -972,6 +972,12 @@ def register(app):
                     if not effective_role_has_action(current_user.effective_role, required_action):
                         abort(403)
                 require_ticket_team_access(ticket)
+                # The review prompt above the record copies a typed review into
+                # pir_* fields, so Update saves it before any move to Closed.
+                if ticket.kind == "change" and request.form.get("pir_summary", "").strip():
+                    record_change_review(ticket, request.form.get("pir_outcome", ""), request.form.get("pir_summary"),
+                                         request.form.get("pir_follow_up_actions", ""))
+                    db.session.flush()
                 try:
                     assignee_id = int(request.form["assignee_id"]) if request.form.get("assignee_id") else None
                 except ValueError:
@@ -1528,6 +1534,37 @@ def register(app):
         )
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 
+    def record_change_review(ticket, outcome, summary, follow_up_actions):
+        """Creates or updates a change's post-implementation review (not
+        committed). Shared by the review form and the record's own Update
+        button, so a review typed above the record is never lost."""
+        if outcome not in CHANGE_PIR_OUTCOMES:
+            abort(400, description=tr("Select a valid review outcome."))
+        summary = (summary or "").strip()
+        if not summary:
+            abort(400, description=tr("A summary is required for the post-implementation review."))
+        follow_up_actions = (follow_up_actions or "").strip()
+        pir = ticket.post_implementation_review
+        if pir:
+            before = {"outcome": pir.outcome, "summary": pir.summary}
+            pir.outcome = outcome
+            pir.summary = summary
+            pir.follow_up_actions = follow_up_actions
+            pir.reviewed_by_id = current_user.id
+            pir.reviewed_at = now()
+            log_field_changes("ticket", ticket.id, before, {"outcome": outcome, "summary": summary},
+                              event="Post-implementation review updated")
+        else:
+            pir = ChangePostImplementationReview(
+                ticket_id=ticket.id, outcome=outcome, summary=summary,
+                follow_up_actions=follow_up_actions, reviewed_by_id=current_user.id,
+            )
+            db.session.add(pir)
+            ticket.post_implementation_review = pir
+            log_history("ticket", ticket.id, "Post-implementation review recorded", details=outcome)
+        audit("review", ticket.number, f"PIR outcome: {outcome}")
+        return pir
+
     @app.post("/change/<int:ticket_id>/pir")
     @roles("agent", "manager", "admin")
     def change_pir_update(ticket_id):
@@ -1541,31 +1578,8 @@ def register(app):
         if ticket.kind != "change":
             abort(404)
         require_ticket_team_access(ticket)
-        outcome = request.form.get("outcome", "")
-        if outcome not in CHANGE_PIR_OUTCOMES:
-            abort(400, description=tr("Select a valid review outcome."))
-        summary = request.form.get("summary", "").strip()
-        if not summary:
-            abort(400, description=tr("A summary is required for the post-implementation review."))
-        pir = ticket.post_implementation_review
-        if pir:
-            before = {"outcome": pir.outcome, "summary": pir.summary}
-            pir.outcome = outcome
-            pir.summary = summary
-            pir.follow_up_actions = request.form.get("follow_up_actions", "").strip()
-            pir.reviewed_by_id = current_user.id
-            pir.reviewed_at = now()
-            log_field_changes("ticket", ticket.id, before, {"outcome": outcome, "summary": summary},
-                              event="Post-implementation review updated")
-        else:
-            pir = ChangePostImplementationReview(
-                ticket_id=ticket.id, outcome=outcome, summary=summary,
-                follow_up_actions=request.form.get("follow_up_actions", "").strip(),
-                reviewed_by_id=current_user.id,
-            )
-            db.session.add(pir)
-            log_history("ticket", ticket.id, "Post-implementation review recorded", details=outcome)
-        audit("review", ticket.number, f"PIR outcome: {outcome}")
+        record_change_review(ticket, request.form.get("outcome", ""), request.form.get("summary", ""),
+                             request.form.get("follow_up_actions", ""))
         db.session.commit()
         if request.form.get("then_close") and ticket.state == "Resolved":
             if not effective_role_has_action(current_user.effective_role, "resolve"):

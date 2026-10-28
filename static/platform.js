@@ -1091,3 +1091,25 @@ document.addEventListener("DOMContentLoaded", () => {
     render();
   }).catch(() => unavailable(tr("Desktop notifications could not be checked. Reload the page to try again.")));
 })();
+
+// A change's post-implementation review has its own form, but people often
+// type it and press the record's Update button. Carry a typed review into
+// that submit as pir_* fields so the server saves it before any move to Closed.
+(() => {
+  const record = document.getElementById("task-record-form");
+  if (!record) return;
+  record.addEventListener("submit", () => {
+    record.querySelectorAll("input[data-pir-copy]").forEach((input) => input.remove());
+    const forms = [...document.querySelectorAll("form[data-change-review-form]")];
+    const typed = forms.find((form) => (form.elements.summary?.value || "").trim() && (form.elements.summary.value !== form.elements.summary.defaultValue || form.elements.outcome.value !== [...form.elements.outcome.options].find((o) => o.defaultSelected)?.value));
+    if (!typed) return;
+    for (const name of ["outcome", "summary", "follow_up_actions"]) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = `pir_${name}`;
+      input.value = typed.elements[name]?.value || "";
+      input.dataset.pirCopy = "";
+      record.append(input);
+    }
+  });
+})();
