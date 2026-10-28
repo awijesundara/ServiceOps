@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ tr_value(spec.label) }} · {{ tr('Email delivery') }} · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = tr_value(spec.label) %}{% set admin_parent_title = tr('Email delivery') %}{% set admin_parent_url = url_for('email_services') %}{% include '_admin_context.html' %}
+<div class="email-admin">
+<header class="settings-page-head"><div><p class="eyebrow"><a href="{{ url_for('email_services') }}">{{ tr('Email delivery')|upper }}</a></p><h1>{{ service.name if service else tr('Add') ~ ' ' ~ tr_value(spec.label) }}</h1><p>{{ tr_value(spec.summary) }}</p></div><span class="email-provider-mark is-large" aria-hidden="true">{{ spec.icon }}</span></header>
+
+<form method="post" class="email-service-form" data-email-service-form>
+  <section class="panel">
+    <h2>{{ tr('Name') }}</h2>
+    <label class="email-field"><span>{{ tr('Name shown in this list') }}</span><input name="name" value="{{ name }}" required maxlength="120"></label>
+  </section>
+
+  {% if spec.methods %}
+  <section class="panel">
+    <fieldset class="email-methods"><legend><h2>{{ tr('Connection method') }}</h2></legend>
+      {% for key, value in spec.methods.items() %}
+      <label class="email-method"><input type="radio" name="method" value="{{ key }}" {% if method == key %}checked{% endif %}><span>{{ tr_value(value[0]) }}</span></label>
+      {% endfor %}
+    </fieldset>
+  </section>
+  {% endif %}
+
+  {% macro field_input(field) -%}
+    {% set value = config.get(field.key, field.default) %}
+    {% if field.type == 'bool' %}
+      <span class="switch-row"><input type="checkbox" name="{{ field.key }}" id="f-{{ field.key }}" {% if value|string|lower in ['true','1','yes','on'] %}checked{% endif %}> {{ tr('Enabled') }}</span>
+    {% elif field.type == 'choice' %}
+      <select name="{{ field.key }}" id="f-{{ field.key }}">{% for choice, label in field.choices.items() %}<option value="{{ choice }}" {% if value == choice %}selected{% endif %}>{{ tr_value(label) }}</option>{% endfor %}</select>
+    {% elif field.type == 'secret' %}
+      <input type="password" name="{{ field.key }}" id="f-{{ field.key }}" autocomplete="new-password" placeholder="{{ tr('Saved — leave blank to keep it') if field.key in secrets_set else (field.placeholder or '') }}" {% if field.required and field.key not in secrets_set %}data-required{% endif %}>
+    {% elif field.type == 'secret_textarea' %}
+      <textarea name="{{ field.key }}" id="f-{{ field.key }}" rows="5" spellcheck="false" autocomplete="off" placeholder="{{ tr('Saved — leave blank to keep it') if field.key in secrets_set else tr('Paste the PEM text') }}"></textarea>
+    {% elif field.type == 'textarea' %}
+      <textarea name="{{ field.key }}" id="f-{{ field.key }}" rows="5" spellcheck="false">{{ value }}</textarea>
+    {% else %}
+      <input type="{{ 'email' if field.type == 'email' else ('number' if field.type == 'int' else 'text') }}" name="{{ field.key }}" id="f-{{ field.key }}" value="{{ value }}" placeholder="{{ field.placeholder }}" {% if field.type == 'int' %}min="1" max="65535"{% endif %} {% if field.required %}data-required{% endif %}>
+    {% endif %}
+  {%- endmacro %}
+
+  <section class="panel">
+    <h2>{{ tr('Connection') }}</h2>
+    <div class="email-fields">
+    {% for field in fields if field.key not in ['SMTP_FROM','SMTP_FROM_NAME','SMTP_REPLY_TO'] %}
+      <div class="email-field{% if field.type in ['textarea','secret_textarea'] %} is-wide{% endif %}" {% if field.methods %}data-methods="{{ field.methods|join(' ') }}"{% endif %}>
+        <label for="f-{{ field.key }}">{{ tr_value(field.label) }}{% if field.required %} <span class="email-required" aria-hidden="true">*</span>{% endif %}</label>
+        {{ field_input(field) }}
+        {% if field.help %}<small>{{ tr_value(field.help) }}</small>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>{{ tr('Sender') }}</h2>
+    <div class="email-fields">
+    {% for field in fields if field.key in ['SMTP_FROM','SMTP_FROM_NAME','SMTP_REPLY_TO'] %}
+      <div class="email-field">
+        <label for="f-{{ field.key }}">{{ tr_value(field.label) }}{% if field.required %} <span class="email-required" aria-hidden="true">*</span>{% endif %}</label>
+        {{ field_input(field) }}
+        {% if field.help %}<small>{{ tr_value(field.help) }}</small>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  </section>
+
+  <div class="settings-save"><div><strong>{{ tr('Secrets are encrypted') }}</strong><small>{{ tr('Saved secrets are never shown again. Leave a secret blank to keep it.') }}</small></div><div class="ui-cluster"><a class="button" href="{{ url_for('email_services') }}">{{ tr('Cancel') }}</a><button class="primary">{{ tr('Save service') }}</button></div></div>
+</form>
+</div>
+<script src="{{ url_for('static', filename='email-services.js', v=asset_version) }}" defer></script>
+{% endblock %}

@@ -25,7 +25,9 @@ says where it failed (connect, tls, auth, send), so the test button can show
 an administrator something they can act on.
 """
 import base64
+import contextvars
 import os
+import re
 import smtplib
 import socket
 import ssl
@@ -34,7 +36,7 @@ import threading
 import time
 import uuid
 from email.message import EmailMessage
-from email.utils import getaddresses, make_msgid, parseaddr
+from email.utils import formataddr, getaddresses, make_msgid, parseaddr
 
 import requests
 
@@ -119,14 +121,28 @@ def _core():
     return core
 
 
-def _setting(key, default=""):
-    """Stored setting, then the environment variable, then `default` --
-    never the schema default, so a provider preset can fill the gap."""
-    value = _core().setting_value(key, os.getenv(key) or default)
-    return default if value == PRESET else value
-
-
+# A saved MailService's settings while it sends (see send_with_service);
+# None means the legacy email platform settings.
+_service_settings = contextvars.ContextVar("mail_service_settings", default=None)
 PRESET = "preset"
+
+
+def _setting(key, default=""):
+    """The sending service's own value, or -- with no service -- the stored
+    setting, then the environment variable, then `default`. Never the schema
+    default, so a provider preset can fill the gap."""
+    override = _service_settings.get()
+    if override is not None:
+        value = override.get(key)
+        value = "" if value is None else str(value)
+    else:
+        value = _core().setting_value(key, os.getenv(key) or default)
+    return default if value in ("", PRESET) else value
+
+
+def _flag(key, default=False):
+    value = _setting(key, "")
+    return default if value == "" else value.strip().lower() in {"true", "1", "yes", "on"}
 
 
 def _proxy_url():
@@ -163,10 +179,8 @@ def recipients_of(message):
     return [address for _, address in getaddresses(fields) if address]
 
 
-def send(message):
-    """Sends `message` with the configured transport. Returns the transport
-    name; raises MailError on any failure."""
-    ensure_headers(message)
+def _transmit(message):
+    """Sends with whatever settings are active: a service's or the legacy ones."""
     transport = _setting("MAIL_TRANSPORT", "smtp") or "smtp"
     handler = {
         "smtp": send_smtp, "microsoft_graph": send_microsoft_graph, "amazon_ses": send_amazon_ses,
@@ -175,8 +189,21 @@ def send(message):
     }.get(transport)
     if handler is None:
         raise MailError("config", f"Unknown email transport {transport!r}.", permanent=True)
+    sender = sender_address()
+    if sender:
+        # Each service sends as its own verified sender.
+        name = _setting("SMTP_FROM_NAME", "") or (parseaddr(str(message["From"] or ""))[0]) or "ServiceOps"
+        del message["From"]
+        message["From"] = formataddr((name, sender))
+        reply_to = _setting("SMTP_REPLY_TO", "")
+        if reply_to:
+            del message["Reply-To"]
+            message["Reply-To"] = reply_to
+    if not parseaddr(str(message["From"] or ""))[1]:
+        raise MailError("config", "Set the from address for this email service.", permanent=True)
     if not recipients_of(message):
         raise MailError("config", "The message has no recipient.", permanent=True)
+    ensure_headers(message)
     try:
         handler(message)
     except MailError:
@@ -189,6 +216,57 @@ def send(message):
     except requests.RequestException as error:
         raise MailError("connect", f"Could not reach {TRANSPORT_LABELS[transport]}: {error}") from error
     return transport
+
+
+def send_with_service(message, service):
+    """Sends with one saved MailService and records the outcome on it."""
+    from serviceops_models import now
+    token = _service_settings.set(service_settings(service.provider, service.config))
+    try:
+        _transmit(message)
+    except MailError as error:
+        service.last_error = f"{error.stage}: {error}"[:600]
+        raise
+    finally:
+        _service_settings.reset(token)
+    service.last_used_at, service.last_error = now(), None
+    return service
+
+
+def active_services():
+    """(default, fallback) saved services; (None, None) when none are saved."""
+    from serviceops_models import MailService
+    rows = MailService.query.filter((MailService.is_default.is_(True)) | (MailService.is_fallback.is_(True))).all()
+    default = next((row for row in rows if row.is_default), None)
+    fallback = next((row for row in rows if row.is_fallback and row is not default), None)
+    return default, fallback
+
+
+def send(message):
+    """Sends `message` with the default email service, then the fallback if
+    the default fails. With no saved service, uses the email platform
+    settings (installations configured before services existed). Returns a
+    description of what sent it; raises MailError when nothing could."""
+    from serviceops_models import MailService
+    default, fallback = active_services()
+    if default is None and fallback is None:
+        if MailService.query.first() is not None or _core().setting_bool("MAIL_SERVICES_ACTIVE"):
+            raise MailError("config", "No email service is set as the default.", permanent=True)
+        return _transmit(message)
+    errors = []
+    for service in (default, fallback):
+        if service is None:
+            continue
+        try:
+            send_with_service(message, service)
+            return service.name
+        except MailError as error:
+            errors.append(error)
+    if len(errors) == 1:
+        raise errors[0]
+    first, last = errors
+    raise MailError(last.stage, f"Default service failed ({first}); fallback failed ({last})",
+                    permanent=first.permanent and last.permanent)
 
 
 def _http_error_detail(response):
@@ -211,7 +289,7 @@ def smtp_profile():
         host = f"email-smtp.{_setting('SES_REGION', '') or 'us-east-1'}.amazonaws.com"
     core = _core()
     security = _setting("SMTP_SECURITY", "") or security or (
-        "starttls" if core.setting_bool("SMTP_STARTTLS", True) else "none")
+        "starttls" if _flag("SMTP_STARTTLS", True) else "none")
     try:
         configured_port = int(_setting("SMTP_PORT", "0") or 0)
     except ValueError:
@@ -234,7 +312,7 @@ def tls_context():
     ca = _setting("SMTP_CA_CERT", "").replace("\\n", "\n").strip()
     if ca:
         context.load_verify_locations(cadata=ca)
-    if _core().setting_bool("SMTP_TLS_INSECURE"):
+    if _flag("SMTP_TLS_INSECURE"):
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
     return context
@@ -592,31 +670,273 @@ def send_pickup_directory(message):
         raise MailError("send", f"Could not write to the pickup directory: {error}") from error
 
 
+# --- Saved services -------------------------------------------------------
+#
+# Each provider asks only for its own fields. A field's `key` is the setting
+# name the transports read, so a service is just a set of those settings.
+# `methods` limits a field to some of the provider's methods.
+
+def _f(key, label, kind="text", required=False, methods=None, help="", placeholder="", choices=None, default=""):
+    return {"key": key, "label": label, "type": kind, "required": required, "methods": methods,
+            "help": help, "placeholder": placeholder, "choices": choices, "default": default}
+
+
+SENDER_FIELDS = [
+    _f("SMTP_FROM", "From address", "email", True, help="The address recipients see. It must be verified or allowed by the provider.",
+       placeholder="servicedesk@example.com"),
+    _f("SMTP_FROM_NAME", "Sender name", placeholder="IT Service Desk"),
+    _f("SMTP_REPLY_TO", "Reply-to address", "email", help="Optional. Where replies go, for example a support mailbox."),
+]
+_MS_APP = [
+    _f("MS_CLOUD", "Microsoft cloud", "choice", choices=MICROSOFT_CLOUD_LABELS, default="global", methods=["graph", "smtp_oauth"]),
+    _f("MS_TENANT_ID", "Directory (tenant) ID", required=True, methods=["graph", "smtp_oauth"],
+       placeholder="00000000-0000-0000-0000-000000000000"),
+    _f("MS_CLIENT_ID", "Application (client) ID", required=True, methods=["graph", "smtp_oauth"]),
+    _f("MS_CLIENT_SECRET", "Client secret", "secret", methods=["graph", "smtp_oauth"],
+       help="Or use a certificate below. One of the two is required."),
+    _f("MS_CLIENT_CERTIFICATE", "Client certificate", "secret_textarea", methods=["graph", "smtp_oauth"],
+       help="PEM with the private key and the certificate. Used instead of the secret."),
+]
+PROVIDERS = {
+    "sendgrid": {
+        "label": "SendGrid", "icon": "SG", "summary": "Twilio SendGrid over its HTTPS API.",
+        "transport": "sendgrid",
+        "fields": [_f("MAIL_API_KEY", "API key", "secret", True, help="Create one with only the Mail Send permission.",
+                      placeholder="SG.…")],
+    },
+    "microsoft365": {
+        "label": "Microsoft 365", "icon": "M365", "summary": "Exchange Online through Microsoft Graph, SMTP OAuth2 or a connector.",
+        "methods": {
+            "graph": ("Microsoft Graph API (recommended)", {"MAIL_TRANSPORT": "microsoft_graph"}),
+            "smtp_oauth": ("SMTP with OAuth2", {"MAIL_TRANSPORT": "smtp", "SMTP_PROVIDER": "microsoft365_oauth2"}),
+            "relay": ("Connector relay (no sign-in)", {"MAIL_TRANSPORT": "smtp", "SMTP_PROVIDER": "microsoft365_relay"}),
+        },
+        "fields": [
+            *_MS_APP,
+            _f("MS_SENDER_MAILBOX", "Mailbox to send as", "email", True, methods=["graph"],
+               help="The app needs the Mail.Send application permission for this mailbox."),
+            _f("SMTP_USERNAME", "Mailbox to send as", "email", True, methods=["smtp_oauth"],
+               help="The app needs SMTP.SendAsApp and a service principal with access to this mailbox."),
+            _f("SMTP_HOST", "Your MX endpoint", required=True, methods=["relay"],
+               placeholder="contoso-com.mail.protection.outlook.com",
+               help="The connector must trust this server's public IP address or certificate."),
+        ],
+    },
+    "google": {
+        "label": "Google Workspace", "icon": "G", "summary": "Gmail or Google Workspace by relay, app password or OAuth2.",
+        "methods": {
+            "relay": ("SMTP relay service (IP allow-list)", {"MAIL_TRANSPORT": "smtp", "SMTP_PROVIDER": "google_workspace_relay"}),
+            "app_password": ("App password", {"MAIL_TRANSPORT": "smtp", "SMTP_PROVIDER": "google_workspace_app_password"}),
+            "oauth2": ("OAuth2", {"MAIL_TRANSPORT": "smtp", "SMTP_PROVIDER": "google_workspace_oauth2"}),
+        },
+        "fields": [
+            _f("SMTP_USERNAME", "Google account", "email", True, methods=["app_password", "oauth2"]),
+            _f("SMTP_PASSWORD", "App password", "secret", True, methods=["app_password"]),
+            _f("SMTP_OAUTH_CLIENT_ID", "OAuth client ID", required=True, methods=["oauth2"]),
+            _f("SMTP_OAUTH_CLIENT_SECRET", "OAuth client secret", "secret", True, methods=["oauth2"]),
+            _f("SMTP_OAUTH_REFRESH_TOKEN", "OAuth refresh token", "secret", True, methods=["oauth2"]),
+        ],
+    },
+    "amazon_ses": {
+        "label": "Amazon SES", "icon": "SES", "summary": "The SES v2 API with access keys or the server's IAM role.",
+        "transport": "amazon_ses",
+        "fields": [
+            _f("SES_REGION", "Region", required=True, placeholder="eu-west-1"),
+            _f("SES_ACCESS_KEY_ID", "Access key ID", help="Leave both keys blank to use the pod or instance IAM role."),
+            _f("SES_SECRET_ACCESS_KEY", "Secret access key", "secret"),
+            _f("SES_CONFIGURATION_SET", "Configuration set", help="Optional. For SES event publishing."),
+        ],
+    },
+    "mailgun": {
+        "label": "Mailgun", "icon": "MG", "summary": "Mailgun over its HTTPS API.", "transport": "mailgun",
+        "fields": [
+            _f("MAIL_API_KEY", "API key", "secret", True),
+            _f("MAILGUN_DOMAIN", "Sending domain", required=True, placeholder="mg.example.com"),
+            _f("MAILGUN_REGION", "Region", "choice", choices={"us": "US", "eu": "EU"}, default="us"),
+        ],
+    },
+    "postmark": {
+        "label": "Postmark", "icon": "PM", "summary": "Postmark over its HTTPS API.", "transport": "postmark",
+        "fields": [
+            _f("MAIL_API_KEY", "Server API token", "secret", True),
+            _f("POSTMARK_MESSAGE_STREAM", "Message stream", default="outbound"),
+        ],
+    },
+    "smtp": {
+        "label": "SMTP server", "icon": "SMTP",
+        "summary": "Exchange Server, Postfix, Brevo, Zoho or any other SMTP server or relay.",
+        "transport": "smtp", "fixed": {"SMTP_PROVIDER": "generic"},
+        "fields": [
+            _f("SMTP_HOST", "Server", required=True, placeholder="smtp.example.com"),
+            _f("SMTP_PORT", "Port", "int", default="587", help="587 for STARTTLS, 465 for implicit TLS, 25 for an internal relay."),
+            _f("SMTP_SECURITY", "Encryption", "choice", default="starttls",
+               choices={"starttls": "STARTTLS", "tls": "Implicit TLS (SMTPS)", "none": "None (internal relay only)"}),
+            _f("SMTP_AUTH_MODE", "Sign-in", "choice", default="password",
+               choices={"password": "Username and password", "none": "None (the relay trusts this server)"}),
+            _f("SMTP_USERNAME", "Username"),
+            _f("SMTP_PASSWORD", "Password", "secret"),
+            _f("SMTP_LOCAL_HOSTNAME", "EHLO name", help="Optional. Some relays only accept a known host name."),
+            _f("SMTP_CA_CERT", "Trusted CA certificate", "textarea",
+               help="Optional. PEM of the CA that issued the server's certificate, for internal CAs."),
+            _f("SMTP_TLS_INSECURE", "Skip certificate verification (insecure, last resort)", "bool"),
+        ],
+    },
+    "sendmail": {
+        "label": "Local sendmail", "icon": "MTA", "summary": "A mail program on this server: Postfix, Exim or msmtp.",
+        "transport": "sendmail",
+        "fields": [_f("SENDMAIL_PATH", "Program", default="/usr/sbin/sendmail", required=True)],
+    },
+    "pickup_directory": {
+        "label": "Pickup directory", "icon": "EML", "summary": "Writes .eml files for an MTA pickup folder or offline review.",
+        "transport": "pickup_directory",
+        "fields": [_f("MAIL_PICKUP_DIRECTORY", "Directory", required=True, placeholder="/var/spool/serviceops-mail")],
+    },
+}
+
+
+def provider_fields(provider):
+    spec = PROVIDERS[provider]
+    return [*spec["fields"], *SENDER_FIELDS]
+
+
+def service_settings(provider, config):
+    """The settings the transports read, for a saved service."""
+    spec = PROVIDERS.get(provider)
+    if spec is None:
+        raise MailError("config", f"Unknown email provider {provider!r}.", permanent=True)
+    method = config.get("method") or (next(iter(spec["methods"])) if spec.get("methods") else None)
+    settings = {"MAIL_TRANSPORT": spec.get("transport", "smtp"), **spec.get("fixed", {})}
+    if spec.get("methods"):
+        settings.update(spec["methods"].get(method, next(iter(spec["methods"].values())))[1])
+    for field in provider_fields(provider):
+        if field["methods"] and method not in field["methods"]:
+            continue
+        settings[field["key"]] = config.get(field["key"], field["default"])
+    return settings
+
+
+def validate_service(provider, method, submitted, existing=None):
+    """Returns (config, errors) from a submitted form. Blank secrets keep
+    their saved value."""
+    spec = PROVIDERS[provider]
+    existing = existing or {}
+    config, errors = {}, []
+    if spec.get("methods"):
+        if method not in spec["methods"]:
+            method = next(iter(spec["methods"]))
+        config["method"] = method
+    for field in provider_fields(provider):
+        if field["methods"] and method not in field["methods"]:
+            continue
+        key, kind = field["key"], field["type"]
+        value = submitted.get(key)
+        if kind == "bool":
+            config[key] = "true" if value else "false"
+            continue
+        value = (value or "").strip()
+        if kind in ("secret", "secret_textarea") and not value:
+            value = existing.get(key, "")
+        if kind == "choice" and value and value not in field["choices"]:
+            errors.append(f"{field['label']} has an invalid value.")
+            continue
+        if kind == "int" and value:
+            if not value.isdigit() or not 0 < int(value) < 65536:
+                errors.append(f"{field['label']} must be between 1 and 65535.")
+                continue
+        if kind == "email" and value and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            errors.append(f"{field['label']} must be an email address.")
+            continue
+        if field["required"] and not value:
+            errors.append(f"{field['label']} is required.")
+            continue
+        if value:
+            config[key] = value[:8000]
+    if provider in ("microsoft365",) and method in ("graph", "smtp_oauth") and not (
+            config.get("MS_CLIENT_SECRET") or config.get("MS_CLIENT_CERTIFICATE")):
+        errors.append("Enter a client secret or a client certificate.")
+    if provider == "amazon_ses" and bool(config.get("SES_ACCESS_KEY_ID")) != bool(config.get("SES_SECRET_ACCESS_KEY")):
+        errors.append("Enter both the access key ID and the secret access key, or neither.")
+    if provider == "smtp" and config.get("SMTP_SECURITY") == "none" and config.get("SMTP_AUTH_MODE") != "none":
+        errors.append("Sign-in needs encryption. Choose STARTTLS or implicit TLS, or no sign-in.")
+    return config, errors
+
+
+def describe_service(provider, config):
+    """One line for the service list: what it connects to, without secrets."""
+    spec = PROVIDERS.get(provider, {})
+    method = config.get("method")
+    parts = []
+    if spec.get("methods") and method in spec["methods"]:
+        parts.append(spec["methods"][method][0])
+    for key in ("SMTP_HOST", "MAILGUN_DOMAIN", "SES_REGION", "MS_SENDER_MAILBOX", "SENDMAIL_PATH", "MAIL_PICKUP_DIRECTORY"):
+        if config.get(key) and (key != "SMTP_HOST" or provider != "microsoft365" or method == "relay"):
+            parts.append(config[key])
+    if config.get("SMTP_FROM"):
+        parts.append(f"from {config['SMTP_FROM']}")
+    return " · ".join(parts)
+
+
+def legacy_service_config():
+    """The email platform settings as a saved service, so an installation
+    configured before services existed keeps working when it moves over.
+    Returns (provider, config) or None when nothing usable is configured."""
+    transport = _setting("MAIL_TRANSPORT", "smtp") or "smtp"
+    provider_by_transport = {"microsoft_graph": "microsoft365", "amazon_ses": "amazon_ses", "sendgrid": "sendgrid",
+                             "mailgun": "mailgun", "postmark": "postmark", "sendmail": "sendmail",
+                             "pickup_directory": "pickup_directory"}
+    provider, config = provider_by_transport.get(transport), {}
+    if provider == "microsoft365":
+        config["method"] = "graph"
+    elif transport == "smtp":
+        preset = _setting("SMTP_PROVIDER", "generic")
+        mapping = {"google_workspace_relay": ("google", "relay"), "google_workspace_app_password": ("google", "app_password"),
+                   "google_workspace_oauth2": ("google", "oauth2"), "microsoft365_oauth2": ("microsoft365", "smtp_oauth"),
+                   "microsoft365_relay": ("microsoft365", "relay")}
+        provider, method = mapping.get(preset, ("smtp", None))
+        if method:
+            config["method"] = method
+        if provider == "smtp":
+            profile = smtp_profile()
+            if not profile["host"]:
+                return None
+            config.update(SMTP_HOST=profile["host"], SMTP_PORT=str(profile["port"]), SMTP_SECURITY=profile["security"],
+                          SMTP_AUTH_MODE="none" if profile["auth_mode"] == "none" else "password")
+    if provider is None:
+        return None
+    for field in provider_fields(provider):
+        if field["key"] in config:
+            continue
+        if field["methods"] and config.get("method") not in field["methods"]:
+            continue
+        value = _setting(field["key"], "")
+        if value:
+            config[field["key"]] = value
+    if not config.get("SMTP_FROM"):
+        return None
+    return provider, config
+
+
 # --- Test -----------------------------------------------------------------
 
-def test_message(recipient, instance_name="ServiceOps"):
+def test_message(recipient, instance_name="ServiceOps", service_name=""):
+    from serviceops_core.email_render import render_email
     message = EmailMessage()
-    sender = sender_address()
-    if not sender:
-        raise MailError("config", "Set the from address before sending a test email.", permanent=True)
-    from email.utils import formataddr
-    message["From"] = formataddr((_setting("SMTP_FROM_NAME", "ServiceOps") or "ServiceOps", sender))
+    if sender_address():
+        message["From"] = formataddr((_setting("SMTP_FROM_NAME", "ServiceOps") or "ServiceOps", sender_address()))
     message["To"] = recipient
     message["Subject"] = f"{instance_name} test email"
     message["Auto-Submitted"] = "auto-generated"
-    reply_to = _setting("SMTP_REPLY_TO", "")
-    if reply_to:
-        message["Reply-To"] = reply_to
-    transport = _setting("MAIL_TRANSPORT", "smtp") or "smtp"
-    message.set_content(
-        f"This is a test email from {instance_name}.\n\n"
-        f"Transport: {TRANSPORT_LABELS.get(transport, transport)}\n"
-        "If you can read this, email notifications are working.\n")
+    render_email(
+        message, title="Email delivery is working",
+        body=(f"This test came from {instance_name} through {service_name or 'the configured email service'}.\n\n"
+              "Notifications about tickets, approvals and SLAs will look like this."),
+        eyebrow="Test email", reason="An administrator sent this test from the email delivery settings.",
+    )
     return message
 
 
 def describe():
-    """A one-line summary of the active configuration for the admin page."""
+    """A one-line summary of the legacy configuration."""
     transport = _setting("MAIL_TRANSPORT", "smtp") or "smtp"
     if transport == "smtp":
         profile = smtp_profile()
@@ -625,4 +945,4 @@ def describe():
     return TRANSPORT_LABELS.get(transport, transport)
 
 
-__all__ = ["MailError", "send", "test_message", "describe"]
+__all__ = ["MailError", "PROVIDERS", "send", "send_with_service", "test_message", "describe"]

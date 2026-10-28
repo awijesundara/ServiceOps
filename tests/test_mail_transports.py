@@ -336,30 +336,3 @@ def test_unknown_transport_and_missing_recipient_fail_cleanly(app):
         with pytest.raises(mail.MailError) as error:
             mail.send(message(to=""))
         assert "recipient" in str(error.value)
-
-
-def test_admin_test_email_reports_success_and_the_failing_step(client, app, fake_smtp):
-    with app.app_context():
-        admin = User.query.filter_by(username="admin").one()
-        admin.email = "admin@example.test"
-        configure(SMTP_HOST="smtp.example.test", SMTP_FROM="serviceops@example.test")
-    login(client)
-    response = client.post("/admin/settings/email_delivery/test", data={"recipient": "ops@example.test"},
-                           follow_redirects=True)
-    assert response.status_code == 200
-    assert b"Test email accepted for delivery to" in response.data
-    assert fake_smtp.instances[-1].sent[0]["To"] == "ops@example.test"
-
-    with app.app_context():
-        configure(SMTP_SECURITY="none", SMTP_AUTH_MODE="password")
-    response = client.post("/admin/settings/email_delivery/test", data={"recipient": "ops@example.test"},
-                           follow_redirects=True)
-    assert b"Failed at step:" in response.data
-    assert b"SMTP authentication requires STARTTLS" in response.data
-    assert client.post("/admin/settings/email_delivery/test", data={"recipient": "not-an-address"},
-                       follow_redirects=True).status_code == 200
-
-
-def test_test_email_requires_an_administrator(client, app):
-    login(client, "agent", "Agent123!")
-    assert client.post("/admin/settings/email_delivery/test", data={"recipient": "x@example.test"}).status_code in (302, 403)

@@ -200,6 +200,9 @@
    "id": "A macro with that name already exists."
   },
   {
+   "id": "A mail program on this server: Postfix, Exim or msmtp."
+  },
+  {
    "id": "A mailbox with that name already exists."
   },
   {
@@ -751,6 +754,9 @@
    "javascript": true
   },
   {
+   "id": "Add an email service"
+  },
+  {
    "id": "Add another requested item to this REQ"
   },
   {
@@ -1261,6 +1267,9 @@
    "id": "Always tries your own AI first, even if it is busy."
   },
   {
+   "id": "Amazon SES"
+  },
+  {
    "id": "Amazon SES (API)"
   },
   {
@@ -1320,9 +1329,6 @@
   },
   {
    "id": "Any"
-  },
-  {
-   "id": "Any SMTP relay, Microsoft 365, Google Workspace, Amazon SES, SendGrid, Mailgun, Postmark or sendmail."
   },
   {
    "id": "Any compatible service"
@@ -2554,6 +2560,9 @@
    "id": "Check now"
   },
   {
+   "id": "Check that inbox, and the spam folder."
+  },
+  {
    "id": "Checked your access again",
    "javascript": true
   },
@@ -2789,6 +2798,9 @@
    "id": "Choose another default before deleting this policy."
   },
   {
+   "id": "Choose another default first. The default cannot also be the fallback."
+  },
+  {
    "id": "Choose another planned or active sprint, or the backlog."
   },
   {
@@ -2833,6 +2845,9 @@
   },
   {
    "id": "Choose executive approvers for Normal and Emergency changes"
+  },
+  {
+   "id": "Choose how ServiceOps sends email"
   },
   {
    "id": "Choose how approvers decide."
@@ -3353,6 +3368,9 @@
   },
   {
    "id": "Connection failed."
+  },
+  {
+   "id": "Connection method"
   },
   {
    "id": "Connection settings"
@@ -4689,6 +4707,9 @@
    "id": "Each row is an event waiting to run, running now, completed, or stopped after repeated failures."
   },
   {
+   "id": "Each service asks only for what that provider needs. Your first service becomes the default."
+  },
+  {
    "id": "Each team has its own capacity and members."
   },
   {
@@ -4768,6 +4789,24 @@
   },
   {
    "id": "Email notifications"
+  },
+  {
+   "id": "Email notifications are off"
+  },
+  {
+   "id": "Email notifications are on"
+  },
+  {
+   "id": "Email notifications turned off."
+  },
+  {
+   "id": "Email notifications turned on."
+  },
+  {
+   "id": "Email service removed."
+  },
+  {
+   "id": "Email service saved. Send a test to check it."
   },
   {
    "id": "Employee ID"
@@ -5162,7 +5201,13 @@
    "id": "Exact state, e.g. 'In Progress' or 'Resolved'."
   },
   {
+   "id": "Exchange Online through Microsoft Graph, SMTP OAuth2 or a connector."
+  },
+  {
    "id": "Exchange Server (on-premises)"
+  },
+  {
+   "id": "Exchange Server, Postfix, Brevo, Zoho or any other SMTP server or relay."
   },
   {
    "id": "Exchange a verified Cloudflare Access token for a mobile session"
@@ -5266,10 +5311,10 @@
    "id": "Failed"
   },
   {
-   "id": "Failed at step:"
+   "id": "Failed logins before lockout"
   },
   {
-   "id": "Failed logins before lockout"
+   "id": "Fallback"
   },
   {
    "id": "Fast hosting"
@@ -5652,6 +5697,9 @@
    "id": "Gmail / Google Workspace (app password)"
   },
   {
+   "id": "Gmail or Google Workspace by relay, app password or OAuth2."
+  },
+  {
    "id": "Go to scheduled automation"
   },
   {
@@ -5716,6 +5764,9 @@
   },
   {
    "id": "Google Sheet URL"
+  },
+  {
+   "id": "Google Workspace"
   },
   {
    "id": "Google Workspace SMTP relay (IP allow-list)"
@@ -6768,6 +6819,9 @@
    "id": "Last checked"
   },
   {
+   "id": "Last delivery failed:"
+  },
+  {
    "id": "Last discovered"
   },
   {
@@ -6795,10 +6849,19 @@
    "id": "Last seen"
   },
   {
+   "id": "Last sent"
+  },
+  {
    "id": "Last set by {field_source}"
   },
   {
    "id": "Last ten completed sprint baselines and outcomes"
+  },
+  {
+   "id": "Last test failed"
+  },
+  {
+   "id": "Last test passed"
   },
   {
    "id": "Last updated"
@@ -7033,6 +7096,9 @@
    "javascript": true
   },
   {
+   "id": "Local sendmail"
+  },
+  {
    "id": "Local sendmail program"
   },
   {
@@ -7154,10 +7220,16 @@
    "id": "Mailboxes · {instance_name}"
   },
   {
+   "id": "Mailgun"
+  },
+  {
    "id": "Mailgun (API)"
   },
   {
    "id": "Mailgun (SMTP)"
+  },
+  {
+   "id": "Mailgun over its HTTPS API."
   },
   {
    "id": "Mailgun region"
@@ -7175,10 +7247,16 @@
    "id": "Major incident coordination"
   },
   {
+   "id": "Make another service the default before removing this one."
+  },
+  {
    "id": "Make default"
   },
   {
    "id": "Manage contacts"
+  },
+  {
+   "id": "Manage email notifications"
   },
   {
    "id": "Manage macros"
@@ -7372,6 +7450,9 @@
   },
   {
    "id": "Metric"
+  },
+  {
+   "id": "Microsoft 365"
   },
   {
    "id": "Microsoft 365 (Graph API)"
@@ -7693,6 +7774,12 @@
   {
    "id": "Name hint",
    "javascript": true
+  },
+  {
+   "id": "Name is required."
+  },
+  {
+   "id": "Name shown in this list"
   },
   {
    "id": "Name your view before saving it."
@@ -8350,6 +8437,9 @@
    "javascript": true
   },
   {
+   "id": "No notification email is sent. In-app, push and chat notifications are unaffected."
+  },
+  {
    "id": "No notifications."
   },
   {
@@ -8764,6 +8854,9 @@
    "id": "Not supported by the stateless transport (405)"
   },
   {
+   "id": "Not tested since it was saved"
+  },
+  {
    "id": "Not tested yet",
    "javascript": true
   },
@@ -8890,6 +8983,9 @@
   {
    "id": "Notifications are blocked for ServiceOps. Allow them in the browser's site settings and in the computer's notification settings, then try again.",
    "javascript": true
+  },
+  {
+   "id": "Notifications are emailed to people with an email address who have not turned email off."
   },
   {
    "id": "Notifications · {instance_name}"
@@ -9379,6 +9475,9 @@
    "id": "Options (one per line, only used for Select)"
   },
   {
+   "id": "Or open:"
+  },
+  {
    "id": "Order"
   },
   {
@@ -9662,6 +9761,9 @@
    "id": "Past 14 days"
   },
   {
+   "id": "Paste the PEM text"
+  },
+  {
    "id": "Patch panel"
   },
   {
@@ -9789,6 +9891,9 @@
   },
   {
    "id": "Pick what you are connecting to. You can change everything afterwards."
+  },
+  {
+   "id": "Pickup directory"
   },
   {
    "id": "Pickup directory (.eml files)"
@@ -10035,6 +10140,9 @@
    "id": "PostgreSQL user"
   },
   {
+   "id": "Postmark"
+  },
+  {
    "id": "Postmark (API)"
   },
   {
@@ -10042,6 +10150,9 @@
   },
   {
    "id": "Postmark message stream"
+  },
+  {
+   "id": "Postmark over its HTTPS API."
   },
   {
    "id": "Potential service impact; downtime is not confirmed."
@@ -10512,6 +10623,9 @@
   },
   {
    "id": "Publishing makes the service name visible on the public status page."
+  },
+  {
+   "id": "Push notifications"
   },
   {
    "id": "Query"
@@ -11146,6 +11260,9 @@
   },
   {
    "id": "Remove this custom proxy"
+  },
+  {
+   "id": "Remove this email service? Its saved credentials are deleted."
   },
   {
    "id": "Remove this link to {number}?"
@@ -11974,6 +12091,9 @@
    "id": "SMTP sender name"
   },
   {
+   "id": "SMTP server"
+  },
+  {
    "id": "SMTP server or relay"
   },
   {
@@ -12085,7 +12205,7 @@
    "id": "Save event choices"
   },
   {
-   "id": "Save first, then send a test with the saved settings. A failure shows the step that failed and the mail service’s own message."
+   "id": "Save every email service you use, then choose which one sends. A fallback takes over automatically when the default fails."
   },
   {
    "id": "Save first, then test the saved connection. The test shows what NetBox holds and what the token may read, without writing anything."
@@ -12227,6 +12347,9 @@
    "id": "Saved planning drafts"
   },
   {
+   "id": "Saved secrets are never shown again. Leave a secret blank to keep it."
+  },
+  {
    "id": "Saved view"
   },
   {
@@ -12234,6 +12357,9 @@
   },
   {
    "id": "Saved {changed} permission change(s)."
+  },
+  {
+   "id": "Saved — leave blank to keep it"
   },
   {
    "id": "Saved. Requests waiting or being answered were cancelled so the new settings apply cleanly."
@@ -12487,6 +12613,12 @@
   },
   {
    "id": "Search · {instance_name}"
+  },
+  {
+   "id": "Secret"
+  },
+  {
+   "id": "Secrets are encrypted"
   },
   {
    "id": "Secure access"
@@ -12747,10 +12879,10 @@
    "id": "Send"
   },
   {
-   "id": "Send a test email"
+   "id": "Send a test notification"
   },
   {
-   "id": "Send a test notification"
+   "id": "Send a test to"
   },
   {
    "id": "Send recovery instructions"
@@ -12759,16 +12891,13 @@
    "id": "Send test"
   },
   {
-   "id": "Send test email"
-  },
-  {
    "id": "Send the CF_Authorization JWT as Cf-Access-Jwt-Assertion; exactly one active account must match its email; MFA applies as for password sign-in."
   },
   {
-   "id": "Send to"
+   "id": "Send to team"
   },
   {
-   "id": "Send to team"
+   "id": "SendGrid"
   },
   {
    "id": "SendGrid (API)"
@@ -12778,6 +12907,12 @@
   },
   {
    "id": "SendGrid, Mailgun or Postmark API key"
+  },
+  {
+   "id": "SendGrid, Microsoft 365, Google Workspace, Amazon SES, Mailgun, Postmark or any SMTP server."
+  },
+  {
+   "id": "Sender"
   },
   {
    "id": "Sending to the model",
@@ -12799,6 +12934,9 @@
   {
    "id": "Sensitive: {reasons}.",
    "javascript": true
+  },
+  {
+   "id": "Sent by {instance}"
   },
   {
    "id": "Sent to a contract's owner (or the administrators) once the last day to give notice is reached."
@@ -13677,6 +13815,9 @@
    "id": "Stop push notifications to this device"
   },
   {
+   "id": "Stop using as fallback"
+  },
+  {
    "id": "Stop watching"
   },
   {
@@ -14205,6 +14346,9 @@
    "id": "The SCIM client must act as a security administrator."
   },
   {
+   "id": "The SES v2 API with access keys or the server's IAM role."
+  },
+  {
    "id": "The SysOps client-support team is not configured."
   },
   {
@@ -14598,6 +14742,9 @@
   },
   {
    "id": "The system default is managed in Outbound network settings."
+  },
+  {
+   "id": "The test failed while"
   },
   {
    "id": "The ticket changed after this proposal was prepared. Run a new investigation first."
@@ -15160,13 +15307,16 @@
    "javascript": true
   },
   {
-   "id": "Turn on browser desktop notifications in Email delivery settings"
+   "id": "Turn on browser desktop notifications in Push notification settings"
   },
   {
    "id": "Turn on desktop notifications for this browser first."
   },
   {
    "id": "Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products."
+  },
+  {
+   "id": "Twilio SendGrid over its HTTPS API."
   },
   {
    "id": "Two thirds"
@@ -15524,6 +15674,9 @@
   },
   {
    "id": "Use an internal path or a complete HTTPS URL."
+  },
+  {
+   "id": "Use as fallback"
   },
   {
    "id": "Use as parent",
@@ -16294,6 +16447,9 @@
    "id": "Write a work note or a reply… (type @ to mention someone)"
   },
   {
+   "id": "Writes .eml files for an MTA pickup folder or offline review."
+  },
+  {
    "id": "Writing answer",
    "javascript": true
   },
@@ -16454,6 +16610,9 @@
   },
   {
    "id": "Your destinations receive only notifications addressed to your ServiceOps account. Team and organization channels are managed separately by administrators."
+  },
+  {
+   "id": "Your email services"
   },
   {
    "id": "Your identity provider did not confirm the required MFA assurance level."
@@ -16670,6 +16829,9 @@
    "id": "chat"
   },
   {
+   "id": "checking the settings"
+  },
+  {
    "id": "choice"
   },
   {
@@ -16686,6 +16848,9 @@
   },
   {
    "id": "configured so it can call"
+  },
+  {
+   "id": "connecting"
   },
   {
    "id": "contains",
@@ -16726,6 +16891,9 @@
   },
   {
    "id": "decision must be Approved or Rejected."
+  },
+  {
+   "id": "default"
   },
   {
    "id": "deleted attachment {name}"
@@ -16820,6 +16988,9 @@
    "id": "fact"
   },
   {
+   "id": "fallback"
+  },
+  {
    "id": "fields"
   },
   {
@@ -16891,6 +17062,15 @@
   },
   {
    "id": "https://sso.example.com/realms/company/.well-known/openid-configuration"
+  },
+  {
+   "id": "iOS app and browser desktop notifications"
+  },
+  {
+   "id": "iOS app notifications and browser desktop notifications."
+  },
+  {
+   "id": "iOS app notifications through Apple Push Notification service, and desktop notifications in the browser (Web Push)."
   },
   {
    "id": "iOS bundle identifier"
@@ -17043,6 +17223,9 @@
   {
    "id": "no model",
    "javascript": true
+  },
+  {
+   "id": "none"
   },
   {
    "id": "none chosen explicitly"
@@ -17290,7 +17473,13 @@
    "id": "saved"
   },
   {
+   "id": "secret"
+  },
+  {
    "id": "seen in the last 15 minutes"
+  },
+  {
+   "id": "sending"
   },
   {
    "id": "server environment"
@@ -17303,6 +17492,9 @@
   },
   {
    "id": "siem"
+  },
+  {
+   "id": "signing in"
   },
   {
    "id": "size u"
@@ -17327,6 +17519,9 @@
   },
   {
    "id": "started"
+  },
+  {
+   "id": "starting encryption"
   },
   {
    "id": "starting u"
@@ -17491,6 +17686,9 @@
   },
   {
    "id": "you"
+  },
+  {
+   "id": "you@example.com"
   },
   {
    "id": "{action_label} for {number}"

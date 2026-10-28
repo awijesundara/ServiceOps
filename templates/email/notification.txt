@@ -1,0 +1,14 @@
+{% autoescape false %}{% if eyebrow %}{{ eyebrow|upper }}{% if reference %} · {{ reference }}{% endif %}
+{% elif reference %}{{ reference }}
+{% endif %}{{ title }}
+{{ "=" * (title|length if title|length < 72 else 72) }}
+
+{{ body }}
+{% if link_url %}
+{{ link_label }}: {{ link_url }}
+{% endif %}
+--
+{% if reason %}{{ reason }}
+{% endif %}{% if preferences_url %}{{ tr('Manage email notifications') }}: {{ preferences_url }}
+{% endif %}{{ tr('Sent by {instance}', instance=instance) }}
+{% endautoescape %}

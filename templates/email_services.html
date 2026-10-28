@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ tr('Email delivery') }} · {{ instance_name }}{% endblock %}
+{% block content %}
+{% set admin_page_title = tr('Email delivery') %}{% set admin_parent_title = tr('Connections & channels') %}{% set admin_parent_url = url_for('admin_section', section='connections-channels') %}{% include '_admin_context.html' %}
+<div class="email-admin">
+<header class="settings-page-head"><div><p class="eyebrow">{{ tr('Connections & channels')|upper }}</p><h1>{{ tr('Email delivery') }}</h1><p>{{ tr('Save every email service you use, then choose which one sends. A fallback takes over automatically when the default fails.') }}</p></div><span class="settings-page-symbol" aria-hidden="true">✉</span></header>
+
+<section class="panel email-switch {{ 'is-on' if enabled else 'is-off' }}">
+  <div><h2>{{ tr('Email notifications are on') if enabled else tr('Email notifications are off') }}</h2>
+  <p>{{ tr('Notifications are emailed to people with an email address who have not turned email off.') if enabled else tr('No notification email is sent. In-app, push and chat notifications are unaffected.') }}</p></div>
+  <form method="post" action="{{ url_for('email_services_enabled') }}"><input type="hidden" name="enabled" value="{{ 'false' if enabled else 'true' }}"><button class="{{ 'button' if enabled else 'primary' }}">{{ tr('Turn off') if enabled else tr('Turn on') }}</button></form>
+</section>
+
+{% if rows %}
+<section class="email-services" aria-labelledby="email-services-title">
+  <h2 id="email-services-title" class="email-section-title">{{ tr('Your email services') }}</h2>
+  {% for row in rows %}{% set service = row.service %}
+  <article class="panel email-service{% if service.is_default %} is-default{% endif %}" id="service-{{ service.id }}">
+    <div class="email-service-head">
+      <span class="email-provider-mark" aria-hidden="true">{{ row.provider.icon or '✉' }}</span>
+      <div class="email-service-title">
+        <h3>{{ service.name }}
+          {% if service.is_default %}<span class="email-role is-default">{{ tr('Default') }}</span>{% elif service.is_fallback %}<span class="email-role is-fallback">{{ tr('Fallback') }}</span>{% endif %}
+        </h3>
+        <p>{{ tr_value(row.provider.label or service.provider) }}{% if row.summary %} · {{ row.summary }}{% endif %}</p>
+      </div>
+      <a class="button" href="{{ url_for('email_service_edit', service_id=service.id) }}">{{ tr('Edit') }}</a>
+    </div>
+
+    <p class="email-service-status">
+      {% if service.last_test_ok %}<span class="email-dot is-ok" aria-hidden="true"></span>{{ tr('Last test passed') }}{% if service.last_tested_at %} · {{ service.last_tested_at|usertime }}{% endif %}
+      {% elif service.last_test_ok == false %}<span class="email-dot is-bad" aria-hidden="true"></span>{{ tr('Last test failed') }}{% if service.last_tested_at %} · {{ service.last_tested_at|usertime }}{% endif %}
+      {% else %}<span class="email-dot" aria-hidden="true"></span>{{ tr('Not tested since it was saved') }}{% endif %}
+      {% if service.last_used_at %} · {{ tr('Last sent') }} {{ service.last_used_at|usertime }}{% endif %}
+    </p>
+    {% if service.last_error %}<p class="flash error">{{ tr('Last delivery failed:') }} {{ service.last_error }}</p>{% endif %}
+    {% if test_result and test_result.id == service.id %}
+      {% if test_result.ok %}<p class="flash success" role="status">{{ tr('Test email accepted for delivery to') }} <strong>{{ test_result.recipient }}</strong>. {{ tr('Check that inbox, and the spam folder.') }}</p>
+      {% else %}<p class="flash error" role="alert"><strong>{{ tr('The test failed while') }} {{ {'config': tr('checking the settings'), 'connect': tr('connecting'), 'tls': tr('starting encryption'), 'auth': tr('signing in'), 'send': tr('sending')}.get(test_result.stage, test_result.stage) }}.</strong><br>{{ test_result.error }}</p>{% endif %}
+    {% endif %}
+
+    <div class="email-service-actions">
+      <form method="post" action="{{ url_for('email_service_test', service_id=service.id) }}" class="email-test-form">
+        <label class="visually-hidden" for="test-{{ service.id }}">{{ tr('Send a test to') }}</label>
+        <input id="test-{{ service.id }}" type="email" name="recipient" value="{{ current_user.email or '' }}" required maxlength="254" autocomplete="email" placeholder="{{ tr('you@example.com') }}">
+        <button class="button">{{ tr('Send test') }}</button>
+      </form>
+      <div class="ui-cluster">
+        {% if not service.is_default %}<form method="post" action="{{ url_for('email_service_role', service_id=service.id) }}"><input type="hidden" name="role" value="default"><button class="button">{{ tr('Make default') }}</button></form>{% endif %}
+        {% if not service.is_default and not service.is_fallback %}<form method="post" action="{{ url_for('email_service_role', service_id=service.id) }}"><input type="hidden" name="role" value="fallback"><button class="button">{{ tr('Use as fallback') }}</button></form>{% endif %}
+        {% if service.is_fallback %}<form method="post" action="{{ url_for('email_service_role', service_id=service.id) }}"><input type="hidden" name="role" value="none"><button class="button">{{ tr('Stop using as fallback') }}</button></form>{% endif %}
+        <form method="post" action="{{ url_for('email_service_delete', service_id=service.id) }}" data-confirm="{{ tr('Remove this email service? Its saved credentials are deleted.') }}"><button class="button danger">{{ tr('Remove') }}</button></form>
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="email-add-title">
+  <div class="panel-head"><div><h2 id="email-add-title">{{ tr('Add an email service') if rows else tr('Choose how ServiceOps sends email') }}</h2><p>{{ tr('Each service asks only for what that provider needs. Your first service becomes the default.') }}</p></div></div>
+  <div class="email-provider-grid">
+    {% for key, provider in providers.items() %}
+    <a class="email-provider-card" href="{{ url_for('email_service_new', provider=key) }}">
+      <span class="email-provider-mark" aria-hidden="true">{{ provider.icon }}</span>
+      <span><strong>{{ tr_value(provider.label) }}</strong><small>{{ tr_value(provider.summary) }}</small></span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+</div>
+{% endblock %}

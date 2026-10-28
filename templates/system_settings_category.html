@@ -47,20 +47,6 @@
 </form>
 {% endif %}
 
-{% if category == 'email_delivery' %}
-<section class="panel admin-section" id="email-test">
-  <div class="panel-head"><div><h2>{{ tr('Send a test email') }}</h2><p>{{ tr('Save first, then send a test with the saved settings. A failure shows the step that failed and the mail service’s own message.') }}</p></div></div>
-  {% if email_test %}
-    {% if email_test.ok %}<p class="flash success" role="status">{{ tr('Test email accepted for delivery to') }} <strong>{{ email_test.recipient }}</strong> · <code>{{ email_test.summary }}</code></p>
-    {% else %}<p class="flash error" role="alert"><strong>{{ tr('Failed at step:') }} {{ tr_value(email_test.stage|title) }}</strong><br>{{ email_test.error }}<br><code>{{ email_test.summary }}</code></p>{% endif %}
-  {% endif %}
-  <form method="post" action="{{ url_for('email_delivery_test') }}" class="ui-cluster">
-    <label>{{ tr('Send to') }} <input type="email" name="recipient" value="{{ current_user.email or '' }}" required maxlength="254" autocomplete="email"></label>
-    <button class="button">{{ tr('Send test email') }}</button>
-  </form>
-</section>
-{% endif %}
-
 {% if category == 'netbox_connection' %}
 <section class="panel admin-section">
   <div class="panel-head"><div><h2>{{ tr('Test and import') }}</h2><p>{{ tr('Save first, then test the saved connection. The test shows what NetBox holds and what the token may read, without writing anything.') }}</p></div>

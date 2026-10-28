@@ -1396,6 +1396,9 @@ def register(app):
             return redirect(url_for("system_settings_category", category="organization") + "#company-logo")
         # "infrastructure" (read-only runtime values) is not a real
         # SETTING_DEFINITIONS group, but gets the same isolated-page treatment.
+        if category == "email_delivery":
+            # Email services have their own page (serviceops_core.web.email_services).
+            return redirect(url_for("email_services"))
         if category not in SETTING_DEFINITIONS and category != "infrastructure":
             abort(404)
         definitions = SETTING_DEFINITIONS.get(category, [])
@@ -1557,7 +1560,7 @@ def register(app):
             )
         admin_section_key = (
             "connections-channels"
-            if category in {"email_delivery", "netbox_connection", "snipeit_connection", "request_tracker_connection"}
+            if category in {"push_notifications", "netbox_connection", "snipeit_connection", "request_tracker_connection"}
             else "platform-security"
         )
         return render_template(
@@ -1566,38 +1569,8 @@ def register(app):
             admin_section_key=admin_section_key,
             infrastructure=_infrastructure_rows() if category == "infrastructure" else None,
             has_company_logo_field=category == "organization",
-            email_test=session.pop("email_test", None) if category == "email_delivery" else None,
             **ad_context,
         )
-
-    @app.post("/admin/settings/email_delivery/test")
-    @roles("admin")
-    @require_action("administer")
-    def email_delivery_test():
-        """Sends one email to the signed-in administrator with the saved
-        settings, and shows the transport's own error if it fails."""
-        from serviceops_core.mail import MailError, describe, send, test_message
-        require_install_settings_authority()
-        allowed = core.route_rate_limit("email_delivery_test", f"user:{current_user.id}", 5)
-        db.session.commit()
-        if not allowed:
-            abort(429, description=tr("Too many test emails. Try again in a minute."))
-        recipient = (request.form.get("recipient") or current_user.email or "").strip()
-        if not recipient or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", recipient) or len(recipient) > 254:
-            flash(tr("Enter a valid email address to send the test to."), "error")
-            return redirect(url_for("system_settings_category", category="email_delivery") + "#email-test")
-        summary = describe()
-        try:
-            send(test_message(recipient, core.setting_value("INSTANCE_NAME", "ServiceOps") or "ServiceOps"))
-        except MailError as error:
-            audit("configure", "Email delivery test failed", f"{summary}; stage={error.stage}; {str(error)[:300]}")
-            db.session.commit()
-            session["email_test"] = {"ok": False, "stage": error.stage, "error": str(error)[:600], "summary": summary}
-        else:
-            audit("configure", "Email delivery test sent", f"{summary}; to={recipient}")
-            db.session.commit()
-            session["email_test"] = {"ok": True, "recipient": recipient, "summary": summary}
-        return redirect(url_for("system_settings_category", category="email_delivery") + "#email-test")
 
     @app.route("/admin/settings/sign_in_and_directory/access", methods=["POST"])
     @roles("admin")

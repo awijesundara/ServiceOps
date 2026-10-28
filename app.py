@@ -2090,6 +2090,41 @@ def single_line_header(value):
     return " ".join(str(value).split())
 
 
+def _render_notification_email(message, payload):
+    """The branded HTML and text body for one notification email."""
+    from serviceops_core.email_render import render_email
+    from serviceops_core.public_url import public_origin
+    from serviceops_core.notification_templates import NOTIFICATION_EVENT_TYPES
+    event_type = payload.get("notification_event_type")
+    origin = public_origin()
+    link = preferences = reference = None
+    if origin:
+        try:
+            with current_app.test_request_context("/"):
+                if payload.get("target_type"):
+                    path = notification_target_url(payload.get("target_type"), payload.get("target_id"))
+                    link = origin + path if path and path.startswith("/") else None
+                preferences = origin + url_for("preferences") + "#notifications"
+        except Exception:  # noqa: BLE001 - a missing link must never stop the email
+            current_app.logger.warning("Email links could not be built for %s", payload.get("target_type"), exc_info=True)
+    if payload.get("target_type") and payload.get("target_id"):
+        try:
+            record = record_reference(payload["target_type"], payload["target_id"])
+            reference = getattr(record, "number", None) or getattr(record, "key", None)
+        except Exception:  # noqa: BLE001
+            reference = None
+    severity = notification_severity_for_event(event_type) if event_type else None
+    render_email(
+        message, title=payload["title"], body=payload["body"],
+        eyebrow=(NOTIFICATION_EVENT_TYPES.get(event_type) or {}).get("label") or "Notification",
+        severity=severity if severity in ("critical", "warning") else None,
+        link_url=link, link_label=f"Open {reference}" if reference else "Open in ServiceOps",
+        reference=reference if reference and reference not in payload["title"] else None,
+        preferences_url=preferences,
+        reason="You receive this because of your role or your activity in ServiceOps.",
+    )
+
+
 def deliver_smtp(event):
     """Returns True once actually sent, False if intentionally skipped
     because the recipient has disabled email notifications (B-130) --
@@ -2107,11 +2142,10 @@ def deliver_smtp(event):
         and notification_event_type not in NON_MUTABLE_EVENT_TYPES
     ):
         return False
-    sender = setting_value("SMTP_FROM", "") or setting_value("MS_SENDER_MAILBOX", "")
-    if not sender:
-        raise RuntimeError("An email from address is required.")
     message = EmailMessage()
-    message["From"] = formataddr((setting_value("SMTP_FROM_NAME", "ServiceOps"), sender))
+    sender = setting_value("SMTP_FROM", "") or setting_value("MS_SENDER_MAILBOX", "")
+    if sender:
+        message["From"] = formataddr((setting_value("SMTP_FROM_NAME", "ServiceOps"), sender))
     message["To"] = user.email
     message["Subject"] = single_line_header(payload["title"])
     reply_to = setting_value("SMTP_REPLY_TO", "")
@@ -2119,10 +2153,9 @@ def deliver_smtp(event):
         message["Reply-To"] = reply_to
     message["X-ServiceOps-Event-ID"] = single_line_header(event.event_id)
     message["Auto-Submitted"] = "auto-generated"
-    message.set_content(payload["body"])
-    # serviceops_core.mail picks the transport (MAIL_TRANSPORT): any SMTP
-    # server or relay, Microsoft Graph, Amazon SES, an HTTP email API,
-    # sendmail or a pickup directory.
+    _render_notification_email(message, payload)
+    # serviceops_core.mail sends with the default email service, then the
+    # fallback; with none saved, with the email platform settings.
     from serviceops_core.mail import send as send_mail
     send_mail(message)
     return True
@@ -8089,6 +8122,7 @@ def create_app(test_config=None):
         client_management,
         dashboards,
         cmdb,
+        email_services,
         incident_admin,
         groups,
         itam,
@@ -8118,6 +8152,7 @@ def create_app(test_config=None):
     incident_admin.register(app)
     service_requests.register(app)
     projects.register(app)
+    email_services.register(app)
 
     @app.after_request
     def security_headers(response):
