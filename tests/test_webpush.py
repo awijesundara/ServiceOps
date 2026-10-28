@@ -224,3 +224,11 @@ def test_worker_delivers_notifications_linked_to_a_record(app, client, monkeypat
         ticket_id = ticket.id
     message = json.loads(_decrypt(_FakeClient.sent[0][1], ua_key, b"0123456789abcdef"))
     assert message["url"].endswith(f"/ticket/{ticket_id}")
+
+
+@pytest.mark.parametrize("method", ["post", "delete"])
+@pytest.mark.parametrize("payload", [["endpoint"], "endpoint", 7, True])
+def test_subscription_routes_reject_non_object_json(client, method, payload):
+    login(client)
+    response = getattr(client, method)("/push/subscriptions", json=payload)
+    assert response.status_code == 400

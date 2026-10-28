@@ -132,3 +132,13 @@ def test_project_return_paths_cannot_leave_the_application(app, client):
         response = client.post("/projects/SAFE/star", data={"next": target})
         assert response.status_code == 302
         assert response.headers["Location"].endswith(expected), (target, response.headers["Location"])
+
+
+@pytest.mark.parametrize("referrer", ["http://[", "https://[invalid]/page", "https://example.org／evil/page"])
+def test_malformed_referrer_falls_back_after_role_save(app, client, referrer):
+    from tests.test_app import login
+
+    login(client)
+    response = client.post("/session/acting-role", data={"role": ""}, headers={"Referer": referrer})
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/"
