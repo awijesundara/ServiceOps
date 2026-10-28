@@ -1301,11 +1301,12 @@ def register(app):
                 return redirect(url_for("preferences") + "#notifications")
             if request.form.get("action") == "notifications":
                 notification_pref.email_enabled = bool(request.form.get("email_enabled"))
-                muted = [
-                    key for key in mutable_event_types
-                    if request.form.get(f"mute_{key}")
-                ]
-                notification_pref.muted_event_types = json.dumps(muted)
+                # Each switch means "email me about this". While email is off
+                # the switches are disabled and not submitted, so the saved
+                # choices are kept for when it is turned back on.
+                if notification_pref.email_enabled:
+                    muted = [key for key in mutable_event_types if not request.form.get(f"email_{key}")]
+                    notification_pref.muted_event_types = json.dumps(muted)
                 audit("update", "Notification preferences", current_user.username)
                 db.session.commit()
                 flash(tr("Notification preferences saved."), "success")

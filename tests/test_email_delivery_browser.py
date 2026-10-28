@@ -45,3 +45,28 @@ def test_email_services_pages(server, app):
             page.screenshot(path=f"{SHOTS}/email-form-{width}.png", full_page=True)
             page.close()
         browser.close()
+
+
+def test_email_preferences_grey_out_with_the_master_switch(server):
+    from playwright.sync_api import sync_playwright
+    _, base = server
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1280, "height": 1100})
+        _sign_in(page, base)
+        page.goto(base + "/preferences#notifications")
+        page.locator('[data-pref-tab="notifications"]').click()
+        master = page.locator('input[name="email_enabled"]')
+        group = page.locator("#email-event-types")
+        types = group.locator('input[type="checkbox"]')
+        assert master.is_checked() and types.count() > 3
+        assert all(types.nth(i).is_checked() for i in range(types.count())), "every email type starts on"
+        page.screenshot(path=f"{SHOTS}/prefs-email-on.png", full_page=True)
+        master.uncheck(force=True)
+        assert group.evaluate("e => e.disabled") and types.first.is_disabled()
+        assert "Turn on email notifications to choose." in group.inner_text()
+        page.screenshot(path=f"{SHOTS}/prefs-email-off.png", full_page=True)
+        master.check(force=True)
+        assert not types.first.is_disabled()
+        assert not _axe(page)
+        browser.close()

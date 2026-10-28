@@ -15,7 +15,7 @@
       <span class="record-updated">{{ tr('Updated {value}', value=((ticket.updated_at|usertime('%b %d, %H:%M')))) }}</span>
       <form method="post" class="follow-ticket-form"><input type="hidden" name="action" value="{{ 'unfollow' if is_following else 'follow' }}"><button type="submit" class="button follow-toggle{% if is_following %} following{% endif %}" title="{{ tr('Stop getting notified about new comments on this ticket') if is_following else tr('Get notified when there is a new comment on this ticket') }}">{{ ('✓ ' ~ tr('Following')) if is_following else ('☆ ' ~ tr('Follow')) }}</button></form>
       {% if can_manage_ticket %}<button class="button" type="submit" form="task-record-form">{{ tr('Update') }}</button>{% endif %}
-      {% if can_close %}<button class="button" type="submit" form="ticket-close-form">{{ tr('Close') }}</button>{% endif %}
+      {% if can_close %}{% if ticket.kind == 'change' and not ticket.post_implementation_review %}<a class="button" href="#change-review" title="{{ tr('Record the post-implementation review first') }}">{{ tr('Close') }}</a>{% else %}<button class="button" type="submit" form="ticket-close-form">{{ tr('Close') }}</button>{% endif %}{% endif %}
       {% if can_reopen %}<button class="button" type="submit" form="ticket-reopen-form">{{ tr('Reopen') }}</button>{% endif %}
       {% if can_manage_ticket and ticket.kind == 'change' and not ticket.deleted_at and ticket.state in ('New', 'Awaiting Approval') %}
       <button class="button" type="submit" form="change-delete-form">{{ tr('Delete') }}</button>
@@ -23,10 +23,11 @@
     </div>
   </header>
   {% if ticket.deleted_at %}<div class="record-readonly-notice">{{ tr('Deleted {value} by {name}. Retained as Cancelled for the audit trail.', value=((ticket.deleted_at|usertime('%b %d, %Y %H:%M'))), name=(ticket.deleted_by.name if ticket.deleted_by else tr('an administrator'))) }}</div>
-  {% elif ticket_locked %}<div class="record-readonly-notice">{{ tr('{number} is {state} and locked: only comments and notes can be added.', number=(ticket.number), state=(tr_value(ticket.state))) }}{% if can_close %} {{ tr('Use Close to complete it, or Reopen to make other changes.') }}{% elif can_reopen %} {{ tr('Use Reopen to make other changes.') }}{% endif %}</div>
+  {% elif ticket_locked %}<div class="record-readonly-notice">{{ tr('{number} is {state} and locked: only comments and notes can be added.', number=(ticket.number), state=(tr_value(ticket.state))) }}{% if can_close and ticket.kind == 'change' and not ticket.post_implementation_review %} {{ tr('Record the post-implementation review below to close it, or use Reopen to make other changes.') }}{% elif can_close %} {{ tr('Use Close to complete it, or Reopen to make other changes.') }}{% elif can_reopen %} {{ tr('Use Reopen to make other changes.') }}{% endif %}</div>
   {% endif %}
   {% if can_close %}<form method="post" id="ticket-close-form" action="{{ url_for('ticket_detail', ticket_id=ticket.id) }}" hidden><input type="hidden" name="action" value="close"></form>{% endif %}
   {% if can_reopen %}<form method="post" id="ticket-reopen-form" action="{{ url_for('ticket_detail', ticket_id=ticket.id) }}" hidden><input type="hidden" name="action" value="reopen"></form>{% endif %}
+  {% include "_change_review_prompt.html" %}
   {% include "_csat_prompt.html" %}
   {% include "_state_track.html" %}
   <form method="post" id="task-record-form" class="record-form">

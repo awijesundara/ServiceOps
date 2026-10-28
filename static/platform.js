@@ -221,6 +221,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // exactly the print-button bug this same pattern already fixed once).
   // A single delegated listener reading data-confirm works with the CSP
   // unchanged, same as data-print-page above.
+  // A master switch with data-enables="<fieldset id>" enables or greys out
+  // the switches that depend on it (email notification types). Disabled
+  // fields are not submitted, and the server keeps their saved values.
+  document.addEventListener("change", event => {
+    const id = event.target.dataset?.enables;
+    const group = id && document.getElementById(id);
+    if (!group) return;
+    group.disabled = !event.target.checked;
+    group.querySelectorAll("[data-text-enabled]").forEach(note => {
+      note.textContent = event.target.checked ? note.dataset.textEnabled : note.dataset.textDisabled;
+    });
+  });
   document.addEventListener("submit", event => {
     const form = event.target.closest("[data-confirm]");
     if (form && !window.confirm(form.dataset.confirm)) {

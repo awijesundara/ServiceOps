@@ -835,7 +835,8 @@ def validate_service(provider, method, submitted, existing=None):
             continue
         value = (value or "").strip()
         if kind in ("secret", "secret_textarea") and not value:
-            value = existing.get(key, "")
+            # Blank keeps the saved secret; "remove" clears an optional one.
+            value = "" if submitted.get(f"clear_{key}") and not field["required"] else existing.get(key, "")
         if kind == "choice" and value and value not in field["choices"]:
             errors.append(f"{field['label']} has an invalid value.")
             continue

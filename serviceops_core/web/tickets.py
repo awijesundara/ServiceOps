@@ -1536,7 +1536,9 @@ def register(app):
         transition_ticket(). Updatable even after the change is closed, in
         case a follow-up action needs adding later."""
         ticket = tenant_record_or_404(Ticket, ticket_id)
-        if ticket.kind != "change" or not ticket.change_governance:
+        # Every change needs a review to close, with or without a
+        # governance record, so the review must never be out of reach.
+        if ticket.kind != "change":
             abort(404)
         require_ticket_team_access(ticket)
         outcome = request.form.get("outcome", "")
@@ -1565,6 +1567,22 @@ def register(app):
             log_history("ticket", ticket.id, "Post-implementation review recorded", details=outcome)
         audit("review", ticket.number, f"PIR outcome: {outcome}")
         db.session.commit()
+        if request.form.get("then_close") and ticket.state == "Resolved":
+            if not effective_role_has_action(current_user.effective_role, "resolve"):
+                abort(403)
+            try:
+                transition_ticket(ticket, "Closed")
+            except HTTPException as error:
+                db.session.rollback()
+                flash(tr("Review saved, but {number} could not be closed: {reason}", number=ticket.number,
+                         reason=error.description or ""), "error")
+                return redirect(url_for("ticket_detail", ticket_id=ticket.id))
+            log_history("ticket", ticket.id, "State changed", "state", "Resolved", "Closed",
+                        details=f"Closed by {current_user.name}.")
+            audit("close", ticket.number, "Resolved -> Closed")
+            db.session.commit()
+            flash(tr("Review saved and {number} closed.", number=ticket.number), "success")
+            return redirect(url_for("ticket_detail", ticket_id=ticket.id))
         flash(tr("Post-implementation review saved for {number}.", number=ticket.number), "success")
         return redirect(url_for("ticket_detail", ticket_id=ticket.id))
 

@@ -1,14 +1,21 @@
 {% if ticket.requester_id == current_user.id and ticket.state in ('Resolved', 'Closed') %}
 {% if ticket.csat_rating %}
-<div class="record-readonly-notice">{{ tr('You rated this {csat_rating}/5. Thanks for the feedback!', csat_rating=(ticket.csat_rating)) }}</div>
+<div class="record-readonly-notice csat-done" role="status"><span class="csat-done-stars" aria-hidden="true">{% for value in [1,2,3,4,5] %}<span class="{{ 'is-on' if value <= ticket.csat_rating else '' }}">★</span>{% endfor %}</span>{{ tr('You rated this {csat_rating}/5. Thanks for the feedback!', csat_rating=(ticket.csat_rating)) }}</div>
 {% else %}
-<div class="record-readonly-notice">
-  <form method="post" action="{{ url_for('ticket_satisfaction_update', ticket_id=ticket.id) }}" class="inline-form">
-    <span>{{ tr('How did we do?') }}</span>
-    {% for value in [1,2,3,4,5] %}<label class="check"><input type="radio" name="rating" value="{{ value }}" required> {{ value }}</label>{% endfor %}
-    <input name="comment" placeholder="{{ tr('Optional comment') }}">
-    <button class="button">{{ tr('Submit rating') }}</button>
-  </form>
-</div>
+<form method="post" action="{{ url_for('ticket_satisfaction_update', ticket_id=ticket.id) }}" class="csat">
+  <fieldset class="csat-scale">
+    <legend>{{ tr('How did we do?') }}<small>{{ tr('Rate how this was handled, from 1 (poor) to 5 (excellent).') }}</small></legend>
+    <div class="csat-options">
+      {% for value, label in [(1, tr('Poor')), (2, tr('Fair')), (3, tr('Good')), (4, tr('Very good')), (5, tr('Excellent'))] %}
+      <label class="csat-option"><input type="radio" name="rating" value="{{ value }}" required><span class="csat-value">{{ value }}</span><span class="csat-label">{{ label }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  <div class="csat-comment">
+    <label for="csat-comment-{{ ticket.id }}" class="visually-hidden">{{ tr('Optional comment') }}</label>
+    <input id="csat-comment-{{ ticket.id }}" name="comment" maxlength="1000" placeholder="{{ tr('Optional comment') }}">
+    <button class="primary">{{ tr('Submit rating') }}</button>
+  </div>
+</form>
 {% endif %}
 {% endif %}

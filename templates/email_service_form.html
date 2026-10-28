@@ -46,6 +46,7 @@
         <label for="f-{{ field.key }}">{{ tr_value(field.label) }}{% if field.required %} <span class="email-required" aria-hidden="true">*</span>{% endif %}</label>
         {{ field_input(field) }}
         {% if field.help %}<small>{{ tr_value(field.help) }}</small>{% endif %}
+        {% if field.type in ['secret','secret_textarea'] and field.key in secrets_set and not field.required %}<label class="switch-row"><input type="checkbox" name="clear_{{ field.key }}"> {{ tr('Remove the saved value') }}</label>{% endif %}
       </div>
     {% endfor %}
     </div>

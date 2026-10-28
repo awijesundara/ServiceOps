@@ -2871,6 +2871,9 @@
    "id": "Choose the executives who can approve Normal and Emergency changes."
   },
   {
+   "id": "Choose the outcome"
+  },
+  {
    "id": "Choose the project the work belongs to."
   },
   {
@@ -4788,6 +4791,12 @@
    "id": "Email delivery timeout (seconds)"
   },
   {
+   "id": "Email me about"
+  },
+  {
+   "id": "Email me when something needs my attention. Every notification also stays in the in-app inbox."
+  },
+  {
    "id": "Email notifications"
   },
   {
@@ -5201,6 +5210,9 @@
    "id": "Exact state, e.g. 'In Progress' or 'Resolved'."
   },
   {
+   "id": "Excellent"
+  },
+  {
    "id": "Exchange Online through Microsoft Graph, SMTP OAuth2 or a connector."
   },
   {
@@ -5312,6 +5324,9 @@
   },
   {
    "id": "Failed logins before lockout"
+  },
+  {
+   "id": "Fair"
   },
   {
    "id": "Fallback"
@@ -5722,6 +5737,9 @@
   },
   {
    "id": "Goals"
+  },
+  {
+   "id": "Good"
   },
   {
    "id": "Good day, {name}"
@@ -6928,6 +6946,9 @@
    "id": "Legal holds"
   },
   {
+   "id": "Lessons learned, problems to raise, documentation to update…"
+  },
+  {
    "id": "Let changes reference an RT ticket (fetch its details into the change)"
   },
   {
@@ -7686,9 +7707,6 @@
   },
   {
    "id": "Move {name} up"
-  },
-  {
-   "id": "Mute specific notifications"
   },
   {
    "id": "Muted evergreen with warm, calm surfaces."
@@ -9067,6 +9085,9 @@
    "id": "One project with its statuses"
   },
   {
+   "id": "One step before closing: post-implementation review"
+  },
+  {
    "id": "One third"
   },
   {
@@ -9176,6 +9197,9 @@
   },
   {
    "id": "Only me"
+  },
+  {
+   "id": "Only members of the assignment group can record the review. Ask the change owner to complete it."
   },
   {
    "id": "Only members of {name} can take {number}."
@@ -9743,7 +9767,7 @@
    "id": "Password recovery"
   },
   {
-   "id": "Password recovery emails are always delivered regardless of these settings, since they're something you specifically requested by using \"Forgot your password?\"."
+   "id": "Password recovery emails are always sent, even with email notifications off, because you asked for them."
   },
   {
    "id": "Password reset. Sign in with your new password."
@@ -10065,6 +10089,9 @@
   },
   {
    "id": "Policy settings"
+  },
+  {
+   "id": "Poor"
   },
   {
    "id": "Portfolio hierarchy and progress"
@@ -10843,6 +10870,9 @@
    "id": "Rate Limited"
   },
   {
+   "id": "Rate how this was handled, from 1 (poor) to 5 (excellent)."
+  },
+  {
    "id": "Rate limit of {limit} requests/minute exceeded for this API client."
   },
   {
@@ -10998,6 +11028,12 @@
   },
   {
    "id": "Record review"
+  },
+  {
+   "id": "Record the post-implementation review below to close it, or use Reopen to make other changes."
+  },
+  {
+   "id": "Record the post-implementation review first"
   },
   {
    "id": "Record type"
@@ -11254,6 +11290,9 @@
   },
   {
    "id": "Remove the attached file"
+  },
+  {
+   "id": "Remove the saved value"
   },
   {
    "id": "Remove the system default proxy"
@@ -11779,6 +11818,12 @@
    "id": "Review planning changes"
   },
   {
+   "id": "Review saved and {number} closed."
+  },
+  {
+   "id": "Review saved, but {number} could not be closed: {reason}"
+  },
+  {
    "id": "Review sessions"
   },
   {
@@ -12269,6 +12314,12 @@
   },
   {
    "id": "Save review"
+  },
+  {
+   "id": "Save review and close {number}"
+  },
+  {
+   "id": "Save review only"
   },
   {
    "id": "Save role"
@@ -15300,7 +15351,7 @@
    "javascript": true
   },
   {
-   "id": "Turn off to stop receiving any email for your notifications; you'll still see them in your in-app inbox."
+   "id": "Turn off the ones you do not want by email."
   },
   {
    "id": "Turn on",
@@ -15311,6 +15362,9 @@
   },
   {
    "id": "Turn on desktop notifications for this browser first."
+  },
+  {
+   "id": "Turn on email notifications to choose."
   },
   {
    "id": "Turn this off and hosted services are never used, whatever else is set. An outside service receives the question and the records needed to answer it, never the asker's name or email. Use a plan whose terms do not keep or train on what it receives: free tiers (Google AI Studio's, for example) may use it to improve the provider's products."
@@ -15893,6 +15947,9 @@
    "id": "Versions group the work shipped together. Set a fix version on work items, then release the version when it ships."
   },
   {
+   "id": "Very good"
+  },
+  {
    "id": "View \"{name}\" deleted."
   },
   {
@@ -16072,6 +16129,9 @@
    "id": "Warranty expiry{src}"
   },
   {
+   "id": "Was the change implemented as planned? Any incidents, deviations or rollbacks?"
+  },
+  {
    "id": "Watch"
   },
   {
@@ -16124,6 +16184,9 @@
   },
   {
    "id": "What do you need?"
+  },
+  {
+   "id": "What happened"
   },
   {
    "id": "What may go to an outside service"
@@ -18352,6 +18415,9 @@
   },
   {
    "id": "{number} already has an underlying problem."
+  },
+  {
+   "id": "{number} cannot be closed until someone records how the change went. Write the outcome and a short summary below."
   },
   {
    "id": "{number} cannot be deleted once it has progressed past approval. Cancel it through the normal state transition instead."

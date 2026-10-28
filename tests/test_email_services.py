@@ -106,6 +106,13 @@ def test_provider_forms_validate_only_the_chosen_method():
     assert errors and "encryption" in errors[0]
     config, errors = mail.validate_service("sendgrid", None, {"SMTP_FROM": "a@b.test"}, existing={"MAIL_API_KEY": "kept"})
     assert not errors and config["MAIL_API_KEY"] == "kept"
+    config, errors = mail.validate_service("sendgrid", None, {"SMTP_FROM": "a@b.test", "clear_MAIL_API_KEY": "on"},
+                                           existing={"MAIL_API_KEY": "kept"})
+    assert not errors and config["MAIL_API_KEY"] == "kept", "a required secret cannot be removed"
+    config, errors = mail.validate_service(
+        "amazon_ses", None, {"SES_REGION": "eu-west-1", "SMTP_FROM": "a@b.test", "clear_SES_SECRET_ACCESS_KEY": "on"},
+        existing={"SES_ACCESS_KEY_ID": "AKIA", "SES_SECRET_ACCESS_KEY": "s"})
+    assert not errors and "SES_SECRET_ACCESS_KEY" not in config and "SES_ACCESS_KEY_ID" not in config
     settings = mail.service_settings("google", {"method": "oauth2", "SMTP_USERNAME": "u@g.test"})
     assert settings["SMTP_PROVIDER"] == "google_workspace_oauth2" and settings["MAIL_TRANSPORT"] == "smtp"
 

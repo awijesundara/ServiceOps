@@ -125,7 +125,10 @@ def register(app):
                 return redirect(url_for("email_services") + f"#service-{service.id}")
             for message in errors:
                 flash(message, "error")
-            config = {**config, **{k: v for k, v in request.form.items() if k not in _secret_keys(provider)}}
+            # Re-show what was typed (never secrets); an unticked box is absent from the form.
+            config = {**config, **{k: v for k, v in request.form.items() if k not in _secret_keys(provider)},
+                      **{field["key"]: "true" if request.form.get(field["key"]) else "false"
+                         for field in provider_fields(provider) if field["type"] == "bool"}}
         return render_template(
             "email_service_form.html", provider=provider, spec=spec, fields=provider_fields(provider),
             service=service, config=config, method=method, name=name, secrets_set={

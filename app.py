@@ -1772,16 +1772,13 @@ def create_notification(user_id, title, body, tenant_id=None, target_type=None, 
                          event_type=None, template_vars=None):
     """`event_type`/`template_vars` are optional (B-130): when given, (1) a
     user who has muted that event_type in NotificationPreference gets
-    nothing at all -- no row, no outbox event, not just a suppressed email
-    -- and (2) an active tenant NotificationTemplate for that event_type
+    no email (deliver_smtp skips it; the in-app notification and other
+    channels still arrive) -- and (2) an active tenant NotificationTemplate for that event_type
     overrides the caller's literal title/body via ${var} substitution.
     Callers that omit event_type behave exactly as before: always
     delivered, using the literal title/body given."""
     tenant_id = tenant_id or tenant_context_id()
     if event_type:
-        preference = NotificationPreference.query.filter_by(user_id=user_id).first()
-        if preference and is_event_muted(preference.muted_event_types, event_type):
-            return None
         template = NotificationTemplate.query.filter_by(
             tenant_id=tenant_id, event_type=event_type, active=True,
         ).first()
@@ -2137,9 +2134,9 @@ def deliver_smtp(event):
         raise RuntimeError("Notification recipient is unavailable.")
     preference = NotificationPreference.query.filter_by(user_id=user.id).first()
     notification_event_type = payload.get("notification_event_type")
-    if (
-        preference and not preference.email_enabled
-        and notification_event_type not in NON_MUTABLE_EVENT_TYPES
+    if preference and notification_event_type not in NON_MUTABLE_EVENT_TYPES and (
+        not preference.email_enabled
+        or (notification_event_type and is_event_muted(preference.muted_event_types, notification_event_type))
     ):
         return False
     message = EmailMessage()
