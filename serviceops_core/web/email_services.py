@@ -10,6 +10,7 @@ authority.
 
 from flask import abort, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user
+from werkzeug.exceptions import HTTPException
 
 import app as core
 from app import audit, require_action, require_install_settings_authority, roles
@@ -46,6 +47,12 @@ def _import_legacy():
     """An installation configured with the old email settings gets them as
     its first saved service, set as the default, so nothing stops sending."""
     if core.setting_bool("MAIL_SERVICES_ACTIVE") or MailService.query.first() is not None:
+        return
+    # The import switches delivery for the whole installation, so it needs
+    # the same authority as any other change to these settings.
+    try:
+        require_install_settings_authority()
+    except HTTPException:
         return
     found = legacy_service_config()
     if not found:

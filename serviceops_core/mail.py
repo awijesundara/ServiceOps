@@ -556,6 +556,20 @@ _STANDARD_HEADERS = {"from", "to", "cc", "bcc", "subject", "content-type", "cont
                      "mime-version", "date", "reply-to"}
 
 
+def _inline_images(message):
+    """The images an HTML body shows by cid: (the company logo), as
+    (content id without brackets, MIME type, base64 data, filename)."""
+    images = []
+    for part in message.walk():
+        content_id = part.get("Content-ID")
+        if part.is_multipart() or not content_id or part.get_content_maintype() != "image":
+            continue
+        data = base64.b64encode(part.get_payload(decode=True) or b"").decode("ascii")
+        images.append((content_id.strip().strip("<>"), part.get_content_type(), data,
+                       part.get_filename() or "image"))
+    return images
+
+
 def _custom_headers(message):
     return {name: str(value) for name, value in message.items() if name.lower() not in _STANDARD_HEADERS}
 
@@ -579,6 +593,10 @@ def send_sendgrid(message):
         # SendGrid reserves Message-ID; it threads by its own ID instead.
         "headers": {k: v for k, v in _custom_headers(message).items() if k.lower() != "message-id"},
     }
+    images = _inline_images(message)
+    if images:
+        body["attachments"] = [{"content": data, "type": kind, "filename": name, "disposition": "inline",
+                                "content_id": cid} for cid, kind, data, name in images]
     if message["Reply-To"]:
         body["reply_to"] = {"email": parseaddr(str(message["Reply-To"]))[1]}
     requests.post("https://api.sendgrid.com/v3/mail/send", json=body,
@@ -607,6 +625,10 @@ def send_postmark(message):
     }
     if html:
         body["HtmlBody"] = html
+    images = _inline_images(message)
+    if images:
+        body["Attachments"] = [{"Name": name, "Content": data, "ContentType": kind, "ContentID": f"cid:{cid}"}
+                               for cid, kind, data, name in images]
     if message["Reply-To"]:
         body["ReplyTo"] = str(message["Reply-To"])
     requests.post("https://api.postmarkapp.com/email", json=body,
@@ -903,6 +925,18 @@ def legacy_service_config():
                    "google_workspace_oauth2": ("google", "oauth2"), "microsoft365_oauth2": ("microsoft365", "smtp_oauth"),
                    "microsoft365_relay": ("microsoft365", "relay")}
         provider, method = mapping.get(preset, ("smtp", None))
+        if provider != "smtp":
+            # A branded service always uses its provider's connection, so a
+            # preset with its host, port or security overridden (for example
+            # Gmail on 465 with implicit TLS) moves over as a generic SMTP
+            # service instead -- unless it signs in with OAuth, which only
+            # the branded service can do.
+            preset_host, preset_port, preset_security, _, _ = SMTP_PROVIDERS.get(preset, SMTP_PROVIDERS["generic"])
+            profile = smtp_profile()
+            overridden = (profile["host"] != preset_host or profile["port"] != (preset_port or 587)
+                          or profile["security"] != (preset_security or "starttls"))
+            if overridden and profile["auth_mode"] in ("password", "none"):
+                provider, method = "smtp", None
         if method:
             config["method"] = method
         if provider == "smtp":

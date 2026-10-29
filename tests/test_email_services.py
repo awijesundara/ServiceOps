@@ -231,3 +231,53 @@ def test_company_logo_travels_inline(app, tmp_path, monkeypatch):
     html = next(part for part in parsed.walk() if part.get_content_type() == "text/html").get_content()
     assert image["Content-ID"].strip("<>") in html
     assert 'href="https://desk.example.test/tickets/1"' in html
+
+
+@pytest.mark.parametrize("transport", ["sendgrid", "postmark"])
+def test_json_api_transports_carry_the_inline_logo(app, tmp_path, monkeypatch, transport):
+    from serviceops_core.email_render import render_email
+    monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+    (tmp_path / "company-logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 64)
+    calls = []
+    monkeypatch.setattr(mail.requests, "post", lambda url, **kw: calls.append(kw) or type(
+        "R", (), {"status_code": 200, "raise_for_status": lambda self: None})())
+    with app.app_context(), app.test_request_context("/"):
+        message = outgoing()
+        render_email(message, title="T", body="B")
+        cid = next(part for part in message.walk() if part.get_content_type() == "image/png")["Content-ID"].strip("<>")
+        token = mail._service_settings.set({"MAIL_TRANSPORT": transport, "MAIL_API_KEY": "k"})
+        try:
+            getattr(mail, f"send_{transport}")(message)
+        finally:
+            mail._service_settings.reset(token)
+    body = calls[0]["json"]
+    if transport == "sendgrid":
+        assert body["attachments"][0]["content_id"] == cid and body["attachments"][0]["disposition"] == "inline"
+    else:
+        assert body["Attachments"][0]["ContentID"] == f"cid:{cid}"
+
+
+def test_overridden_gmail_connection_is_imported_as_generic_smtp(app):
+    with app.app_context():
+        for key, value in {"MAIL_TRANSPORT": "smtp", "SMTP_PROVIDER": "google_workspace_app_password",
+                           "SMTP_PORT": "465", "SMTP_SECURITY": "tls", "SMTP_USERNAME": "desk@example.test",
+                           "SMTP_FROM": "desk@example.test"}.items():
+            setting(key, value)
+        db.session.commit()
+        provider, config = mail.legacy_service_config()
+    assert provider == "smtp"
+    assert (config["SMTP_HOST"], config["SMTP_PORT"], config["SMTP_SECURITY"]) == ("smtp.gmail.com", "465", "tls")
+
+
+def test_a_tenant_admin_without_platform_authority_does_not_import(client, app):
+    from app import Tenant
+    with app.app_context():
+        setting("MAIL_TRANSPORT", "sendgrid")
+        setting("MAIL_API_KEY", "SG.legacy", secret=True)
+        setting("SMTP_FROM", "desk@example.test")
+        db.session.add(Tenant(name="Second", slug="second"))
+        db.session.commit()
+    login(client)
+    client.get("/admin/email")
+    with app.app_context():
+        assert MailService.query.count() == 0
