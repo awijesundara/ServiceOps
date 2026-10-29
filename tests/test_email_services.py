@@ -403,3 +403,14 @@ def test_by_default_only_what_involves_the_recipient_is_emailed(app, monkeypatch
         db.session.add(NotificationPreference(user_id=admin.id, email_scope="all"))
         db.session.commit()
         assert deliver_smtp(_queued_email(admin, event_type="sla.breached")) is True, "chose everything"
+
+
+def test_reference_chip_is_not_repeated_when_the_title_starts_with_it(app):
+    from email.message import EmailMessage
+    from serviceops_core.email_render import render_email
+    with app.app_context():
+        def html(title):
+            message = render_email(EmailMessage(), title=title, body="b", reference="INC0012345")
+            return next(p for p in message.walk() if p.get_content_type() == "text/html").get_content()
+        assert html("INC0012345 assigned to you").count("INC0012345") == 2  # <title> and heading
+        assert html("Assigned to you").count("INC0012345") == 1
