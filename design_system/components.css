@@ -253,3 +253,10 @@ body main .portal-service-status>header h2{font-size:var(--control-font-size)}
 
 
 body main :is([data-scroll-region],[role=tabpanel]):focus-visible{outline:var(--focus-width) solid var(--green);outline-offset:calc(-1 * var(--focus-width))}
+/* Email scope: which notifications are emailed (the standard first). */
+body main .email-scope{display:grid;gap:var(--space-2);margin:var(--space-2) 0 var(--space-3)}
+body main .email-scope-option{display:flex;gap:var(--space-3);align-items:flex-start;padding:var(--space-3);border:var(--border-width) solid var(--line);border-radius:var(--surface-radius);font-weight:400;cursor:pointer}
+body main .email-scope-option input{margin-top:3px;flex:0 0 auto}
+body main .email-scope-option span{display:grid;gap:2px;min-width:0}
+body main .email-scope-option small{color:var(--muted);font-size:var(--font-small)}
+body main .email-scope-option:has(input:checked){border-color:var(--green)}

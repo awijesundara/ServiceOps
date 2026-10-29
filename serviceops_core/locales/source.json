@@ -1252,6 +1252,9 @@
    "id": "Also posted to {count} child incidents."
   },
   {
+   "id": "Also team queue notices, SLA alerts and escalations. Every notification is always in the in-app inbox."
+  },
+  {
    "id": "Always allowed"
   },
   {
@@ -5188,6 +5191,9 @@
   },
   {
    "id": "Everyone who can see this"
+  },
+  {
+   "id": "Everything I am notified about"
   },
   {
    "id": "Everything except requests marked sensitive."
@@ -14895,6 +14901,9 @@
    "id": "These settings apply to every organization on this installation. Only a platform administrator can change them."
   },
   {
+   "id": "Things that involve me"
+  },
+  {
    "id": "Thinking",
    "javascript": true
   },
@@ -16284,6 +16293,9 @@
    "id": "Where to change it"
   },
   {
+   "id": "Which notifications to email"
+  },
+  {
    "id": "Which team handles HR, security, customer and other workspaces"
   },
   {
@@ -16354,6 +16366,9 @@
   },
   {
    "id": "Work already completed when it entered the active sprint is shown separately and excluded from delivered velocity."
+  },
+  {
+   "id": "Work assigned to me, mentions, approvals waiting on me, and updates to tickets and requests I raised or own."
   },
   {
    "id": "Work cannot fit within the plan. Check estimates, team capacity, dependencies and iteration dates."

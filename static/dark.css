@@ -1639,6 +1639,9 @@ html.theme-dark .service-feed-item .portal-status-row{border:0}
 html.theme-dark .service-feed-item a.service-headline{color:var(--ink)}
 html.theme-dark .service-feed-item a.service-headline:focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
 html.theme-dark body main :is([data-scroll-region],[role=tabpanel]):focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
+html.theme-dark body main .email-scope-option{border:var(--border-width) solid var(--line)}
+html.theme-dark body main .email-scope-option small{color:var(--muted)}
+html.theme-dark body main .email-scope-option:has(input:checked){border-color:var(--dk-accent)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

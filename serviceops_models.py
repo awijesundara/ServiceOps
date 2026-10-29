@@ -1879,6 +1879,8 @@ class NotificationPreference(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
     email_enabled = db.Column(db.Boolean, nullable=False, default=True)
     muted_event_types = db.Column(db.Text, nullable=False, default="[]")
+    # "involving_me" (the standard) or "all"; see serviceops_core/email_relevance.py.
+    email_scope = db.Column(db.String(20), nullable=False, default="involving_me", server_default="involving_me")
     user = db.relationship("User")
 
 

@@ -5,7 +5,7 @@ from email.message import EmailMessage
 
 import pytest
 
-from app import OutboxEvent, PlatformSetting, User, create_notification, db, deliver_smtp, settings_cipher
+from app import NotificationPreference, OutboxEvent, PlatformSetting, User, create_notification, db, deliver_smtp, settings_cipher
 from serviceops_models import MailService
 from serviceops_core import mail
 from tests.test_app import app, client, login  # noqa: F401
@@ -202,6 +202,7 @@ def test_notification_email_is_branded_html_with_escaped_content_and_link(app, m
         admin = User.query.filter_by(username="admin").one()
         admin.email = "admin@example.test"
         db.session.commit()
+        db.session.add(NotificationPreference(user_id=admin.id, email_scope="all"))  # SLA alerts are broadcasts
         create_notification(admin.id, "SLA breached: <b>INC9</b>", "Line one\nLine <script>two</script>\n\nSecond paragraph",
                             tenant_id=admin.tenant_id, event_type="sla.breached")
         db.session.commit()
@@ -359,3 +360,57 @@ def test_without_a_public_url_the_logo_stays_embedded(app, tmp_path, monkeypatch
         message = outgoing()
         render_email(message, title="T", body="B")
     assert mail._linked_images(message) == {} and mail._inline_images(message)
+
+
+
+def _queued_email(user, **kwargs):
+    create_notification(user.id, "T", "B", tenant_id=user.tenant_id, **kwargs)
+    db.session.commit()
+    return OutboxEvent.query.filter_by(event_type="notification.created").order_by(OutboxEvent.id.desc()).first()
+
+
+def test_by_default_only_what_involves_the_recipient_is_emailed(app, monkeypatch):
+    from app import Ticket
+    sent = []
+    monkeypatch.setattr(mail, "send", lambda message: sent.append(message["Subject"]))
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        admin.email = "admin@example.test"
+        other = User(username="bystander", name="Bystander", email="by@example.test", role="agent", tenant_id=admin.tenant_id, password_hash="x")
+        db.session.add(other)
+        db.session.flush()
+        mine = Ticket(number="INC0099001", kind="incident", title="Mine", description="d", category="Software",
+                      priority="P3", impact="Medium", urgency="Medium", requester_id=admin.id, tenant_id=admin.tenant_id)
+        theirs = Ticket(number="INC0099002", kind="incident", title="Theirs", description="d", category="Software",
+                        priority="P3", impact="Medium", urgency="Medium", requester_id=other.id, tenant_id=admin.tenant_id)
+        db.session.add_all([mine, theirs])
+        db.session.commit()
+        assert deliver_smtp(_queued_email(admin, target_type="ticket", target_id=mine.id)) is True, "my own ticket"
+        assert deliver_smtp(_queued_email(admin, target_type="ticket", target_id=theirs.id)) is False, "a team notice"
+        assert deliver_smtp(_queued_email(admin, target_type="ticket", target_id=theirs.id,
+                                          event_type="ticket.mentioned")) is True, "a mention"
+        assert deliver_smtp(_queued_email(admin, event_type="sla.breached")) is False, "a broadcast"
+        theirs.assignee_id = admin.id
+        db.session.commit()
+        assert deliver_smtp(_queued_email(admin, target_type="ticket", target_id=theirs.id)) is True, "assigned to me"
+        assert deliver_smtp(_queued_email(admin, target_type="approval_queue")) is True, "a reapproval request"
+        from serviceops_models import Contract
+        owned = Contract(name="Support", owner_id=admin.id, tenant_id=admin.tenant_id)
+        db.session.add(owned)
+        db.session.commit()
+        assert deliver_smtp(_queued_email(admin, target_type="contract", target_id=owned.id,
+                                          event_type="contract.notice")) is True, "a contract I own"
+        db.session.add(NotificationPreference(user_id=admin.id, email_scope="all"))
+        db.session.commit()
+        assert deliver_smtp(_queued_email(admin, event_type="sla.breached")) is True, "chose everything"
+
+
+def test_reference_chip_is_not_repeated_when_the_title_starts_with_it(app):
+    from email.message import EmailMessage
+    from serviceops_core.email_render import render_email
+    with app.app_context():
+        def html(title):
+            message = render_email(EmailMessage(), title=title, body="b", reference="INC0012345")
+            return next(p for p in message.walk() if p.get_content_type() == "text/html").get_content()
+        assert html("INC0012345 assigned to you").count("INC0012345") == 2  # <title> and heading
+        assert html("Assigned to you").count("INC0012345") == 1

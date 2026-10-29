@@ -2134,11 +2134,17 @@ def deliver_smtp(event):
         raise RuntimeError("Notification recipient is unavailable.")
     preference = NotificationPreference.query.filter_by(user_id=user.id).first()
     notification_event_type = payload.get("notification_event_type")
-    if preference and notification_event_type not in NON_MUTABLE_EVENT_TYPES and (
-        not preference.email_enabled
-        or (notification_event_type and is_event_muted(preference.muted_event_types, notification_event_type))
-    ):
-        return False
+    if notification_event_type not in NON_MUTABLE_EVENT_TYPES:
+        # The standard: email what involves the recipient (assigned to them,
+        # a mention, updates to a record they raised or own); everything else
+        # stays in the inbox unless they choose to receive it all by email.
+        from serviceops_core.email_relevance import EVERYTHING, involves_recipient
+        if preference and (not preference.email_enabled or (
+                notification_event_type and is_event_muted(preference.muted_event_types, notification_event_type))):
+            return False
+        scope = (preference.email_scope if preference else None) or ""
+        if scope != EVERYTHING and not involves_recipient(user.id, payload):
+            return False
     message = EmailMessage()
     sender = setting_value("SMTP_FROM", "") or setting_value("MS_SENDER_MAILBOX", "")
     if sender:
