@@ -3,7 +3,7 @@ plain-text alternative.
 
 The HTML is table-based with inline styles, because Outlook (Word's
 renderer), Gmail and Apple Mail each drop different parts of modern CSS.
-The company logo, when one is uploaded, travels inside the message as an
+The company logo (or the ServiceOps mark when none is uploaded) travels inside the message as an
 inline image, so it shows without the mail client fetching anything. Text
 from tickets is always escaped (Jinja autoescape); nothing a requester
 types can add markup to the email.
@@ -28,16 +28,27 @@ def brand_color():
     return value if _HEX.fullmatch(value) else "#003e4c"
 
 
-def _logo_bytes():
+def _read_png(path):
     try:
-        path = os.path.join(current_app.config["UPLOAD_FOLDER"], "company-logo.png")
         if os.path.getsize(path) <= 512 * 1024:
             with open(path, "rb") as handle:
                 data = handle.read()
             return data if data.startswith(b"\x89PNG\r\n\x1a\n") else None
-    except (OSError, KeyError, RuntimeError):
+    except OSError:
         return None
     return None
+
+
+def _logo():
+    """(png bytes, is_default): the uploaded company logo, or the
+    ServiceOps mark when none is uploaded, so every email carries one."""
+    try:
+        uploaded = _read_png(os.path.join(current_app.config["UPLOAD_FOLDER"], "company-logo.png"))
+    except (KeyError, RuntimeError):
+        uploaded = None
+    if uploaded:
+        return uploaded, False
+    return _read_png(os.path.join(current_app.static_folder, "brand", "serviceops-mark.png")), True
 
 
 def paragraphs(body):
@@ -52,14 +63,14 @@ def render_email(message, *, title, body, eyebrow="", reason="", link_url=None, 
     core = _core()
     instance = core.setting_value("INSTANCE_NAME", "ServiceOps") or "ServiceOps"
     accent = SEVERITY_COLORS.get(severity) or brand_color()
-    logo = _logo_bytes()
+    logo, logo_is_default = _logo()
     logo_cid = make_msgid(domain="serviceops.logo") if logo else None
     from serviceops_core.localization import tr
     context = dict(
         tr=tr, instance=instance, title=title, paragraphs=paragraphs(body), body=str(body or "").strip(), eyebrow=eyebrow,
         reason=reason, link_url=link_url, link_label=link_label, preferences_url=preferences_url,
         brand=brand_color(), accent=accent, severity=severity, reference=reference,
-        logo_cid=logo_cid[1:-1] if logo_cid else None,
+        logo_cid=logo_cid[1:-1] if logo_cid else None, logo_is_default=logo_is_default,
         preheader=" ".join(str(body or "").split())[:140],
     )
     # The Jinja environment directly, not render_template: the outbox worker
