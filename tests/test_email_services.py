@@ -295,3 +295,17 @@ def test_without_a_company_logo_every_email_carries_the_serviceops_mark(app, tmp
     with open(f"{app.static_folder}/brand/serviceops-mark.png", "rb") as handle:
         assert image.get_content() == handle.read()
     assert f'cid:{image["Content-ID"].strip("<>")}' in html
+
+
+def test_a_service_without_reply_to_drops_a_leftover_one(app, monkeypatch):
+    sent = []
+    monkeypatch.setattr(mail, "send_pickup_directory", lambda message: sent.append(message))
+    with app.app_context():
+        message = outgoing()
+        message["Reply-To"] = "old-platform@example.test"
+        token = mail._service_settings.set({"MAIL_TRANSPORT": "pickup_directory", "SMTP_FROM": "desk@example.test"})
+        try:
+            mail._transmit(message)
+        finally:
+            mail._service_settings.reset(token)
+    assert sent[0]["Reply-To"] is None

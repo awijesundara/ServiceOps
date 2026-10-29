@@ -214,13 +214,6 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-print-page]").forEach(button => {
     button.addEventListener("click", () => window.print());
   });
-  // Confirmation prompts on destructive forms can't use an inline
-  // onsubmit="return confirm(...)" attribute -- this app's CSP is
-  // script-src 'self' with no 'unsafe-inline', which silently blocks
-  // inline event handlers (the form still submits, just with no prompt,
-  // exactly the print-button bug this same pattern already fixed once).
-  // A single delegated listener reading data-confirm works with the CSP
-  // unchanged, same as data-print-page above.
   // A master switch with data-enables="<fieldset id>" enables or greys out
   // the switches that depend on it (email notification types). Disabled
   // fields are not submitted, and the server keeps their saved values.
@@ -233,6 +226,13 @@ document.addEventListener("DOMContentLoaded", () => {
       note.textContent = event.target.checked ? note.dataset.textEnabled : note.dataset.textDisabled;
     });
   });
+  // Confirmation prompts on destructive forms can't use an inline
+  // onsubmit="return confirm(...)" attribute -- this app's CSP is
+  // script-src 'self' with no 'unsafe-inline', which silently blocks
+  // inline event handlers (the form still submits, just with no prompt,
+  // exactly the print-button bug this same pattern already fixed once).
+  // A single delegated listener reading data-confirm works with the CSP
+  // unchanged, same as data-print-page above.
   document.addEventListener("submit", event => {
     const form = event.target.closest("[data-confirm]");
     if (form && !window.confirm(form.dataset.confirm)) {

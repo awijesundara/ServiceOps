@@ -318,6 +318,14 @@ def test_sendmail_passes_recipients_as_arguments(app, tmp_path):
     assert b"INC0000001 updated" in output.read_bytes()
 
 
+def test_sendmail_refuses_a_program_that_is_not_a_mail_program(app):
+    with app.app_context():
+        configure(MAIL_TRANSPORT="sendmail", SENDMAIL_PATH="/bin/sh")
+        with pytest.raises(mail.MailError) as error:
+            mail.send(message())
+    assert error.value.permanent and "not a mail program" in str(error.value)
+
+
 def test_pickup_directory_writes_complete_eml_files(app, tmp_path):
     with app.app_context():
         configure(MAIL_TRANSPORT="pickup_directory", MAIL_PICKUP_DIRECTORY=str(tmp_path))

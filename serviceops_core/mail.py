@@ -194,9 +194,11 @@ def _transmit(message):
         name = _setting("SMTP_FROM_NAME", "") or (parseaddr(str(message["From"] or ""))[0]) or "ServiceOps"
         del message["From"]
         message["From"] = formataddr((name, sender))
+        # The service's own reply-to, or none: never one left over from
+        # the platform settings or another service.
         reply_to = _setting("SMTP_REPLY_TO", "")
+        del message["Reply-To"]
         if reply_to:
-            del message["Reply-To"]
             message["Reply-To"] = reply_to
     if not parseaddr(str(message["From"] or ""))[1]:
         raise MailError("config", "Set the from address for this email service.", permanent=True)
@@ -671,8 +673,16 @@ def send_amazon_ses(message):
 
 # --- Local delivery -------------------------------------------------------
 
+SENDMAIL_PROGRAMS = frozenset({"sendmail", "msmtp", "ssmtp", "exim", "exim4", "nullmailer-inject"})
+
+
 def send_sendmail(message):
     path = _setting("SENDMAIL_PATH", "/usr/sbin/sendmail") or "/usr/sbin/sendmail"
+    # Only a mail submission program: this path is set in the web UI, and
+    # must never become a way to run any other program on the server.
+    if os.path.basename(path) not in SENDMAIL_PROGRAMS:
+        raise MailError("config", f"{path} is not a mail program ({', '.join(sorted(SENDMAIL_PROGRAMS))}).",
+                        permanent=True)
     if not os.path.isabs(path) or not os.access(path, os.X_OK):
         raise MailError("config", f"{path} is not an executable program on this server.", permanent=True)
     try:

@@ -1063,6 +1063,13 @@ def register(app):
                 except HTTPException as error:
                     db.session.rollback()
                     message = error.description or tr("That change could not be made.")
+                    # Nor a post-implementation review typed on the page.
+                    if ticket.kind == "change" and request.form.get("pir_summary", "").strip():
+                        kept = tenant_record_or_404(Ticket, ticket_id)
+                        record_change_review(kept, request.form.get("pir_outcome", ""), request.form.get("pir_summary"),
+                                             request.form.get("pir_follow_up_actions", ""))
+                        db.session.commit()
+                        message += " " + tr("Your post-implementation review was saved.")
                     # Never lose what the person typed: keep resolution notes as a draft.
                     typed_notes = request.form.get("resolution_notes", "").strip()
                     if ticket.kind == "incident" and typed_notes:
