@@ -342,10 +342,18 @@ def register(app):
         def sort_key(row):
             return (row["due_at"] is None, row["due_at"] or now())
 
+        q = request.args.get("q", "").strip()[:200]
+        if q:
+            needle = q.casefold()
+            def matches(row):
+                return any(needle in str(row.get(key) or "").casefold()
+                           for key in ("number", "title", "kind", "state", "group", "assignee"))
+            assigned_to_me = [row for row in assigned_to_me if matches(row)]
+            team_tasks = [row for row in team_tasks if matches(row)]
         assigned_to_me.sort(key=sort_key)
         team_tasks.sort(key=sort_key)
         return render_template(
-            "task_queue.html", assigned_to_me=assigned_to_me, team_tasks=team_tasks,
+            "task_queue.html", assigned_to_me=assigned_to_me, team_tasks=team_tasks, q=q,
             person=person if person.id != current_user.id else None,
         )
 
@@ -2573,13 +2581,19 @@ def register(app):
     def improvements():
         status_filter = request.args.get("status", "")
         query = tenant_query(ImprovementItem)
+        q = request.args.get("q", "").strip()[:200]
+        if q:
+            like = f"%{core.escape_like(q)}%"
+            query = query.filter(db.or_(ImprovementItem.number.ilike(like, escape="\\"),
+                                       ImprovementItem.title.ilike(like, escape="\\"),
+                                       ImprovementItem.description.ilike(like, escape="\\")))
         if status_filter:
             if status_filter not in IMPROVEMENT_STATES:
                 abort(400)
             query = query.filter_by(status=status_filter)
         items = query.order_by(ImprovementItem.created_at.desc()).all()
         return render_template(
-            "improvements.html", items=items, status_filter=status_filter,
+            "improvements.html", items=items, status_filter=status_filter, q=q,
             states=IMPROVEMENT_STATES,
         )
 

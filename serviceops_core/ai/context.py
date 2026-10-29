@@ -175,7 +175,7 @@ def _services(scope):
 
 
 def _sla(scope):
-    rows = SLADefinition.query.filter_by(active=True, agreement_type="SLA").order_by(SLADefinition.priority, SLADefinition.target_type).limit(16).all()
+    rows = SLADefinition.query.filter_by(tenant_id=scope.tenant_id, active=True, agreement_type="SLA").order_by(SLADefinition.priority, SLADefinition.target_type).limit(16).all()
     if not rows:
         return None
     return "Service level targets", " | ".join(f"{r.name}: {r.priority or 'all priorities'} {r.target_type} within {r.duration_minutes} minutes" for r in rows)

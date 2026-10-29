@@ -1,15 +1,16 @@
+{% from '_record_list.html' import native_filter, all_records %}
+{% from '_admin_icons.html' import admin_icon %}
 {% extends "base.html" %}{% from "_status_badge.html" import status_badge %}{% block title %}{{ tr('Requests & RITMs · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <section class="list-workspace">
   <header class="list-toolbar">
     {% set open_arg = 1 if open_only else none %}
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Open requests') if open_only else tr('Requests') }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}</small></div></div>
-    {% if open_only %}<a class="button" href="{{ url_for('requests_list', q=q or none) }}">{{ tr('Show all requests') }}</a>{% else %}<a class="button" href="{{ url_for('requests_list', q=q or none, open=1) }}">{{ tr('Open only') }}</a>{% endif %}
+    <div class="list-title">{% call native_filter('requests-search', q) %}<label class="record-native-check"><input type="checkbox" name="open" value="1" form="requests-search" data-list-native-field {% if open_only %}checked{% endif %}>{{ tr('Open only') }}</label>{% endcall %}<div><strong>{{ tr('Open requests') if open_only else tr('Requests') }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}</small></div></div>
     <a class="primary button" href="{{ url_for('catalog') }}">{{ tr('Open catalog') }}</a>
     <a class="button" href="{{ url_for('requests_export', q=q, open=open_arg) }}">⬇ CSV</a>
-    <button type="button" class="button" data-print-page>🖶 {{ tr('Print') }}</button>
-    <form class="list-search">
-      {% if open_only %}<input type="hidden" name="open" value="1">{% endif %}<input name="q" value="{{ q }}" placeholder="{{ tr('REQ number') }}" aria-label="{{ tr('Search requests') }}">
+    <button type="button" class="button" data-print-page>{{ admin_icon('printer', 'toolbar-icon') }} {{ tr('Print') }}</button>
+    <form class="list-search" id="requests-search">
+      <input name="q" value="{{ q }}" placeholder="{{ tr('REQ number') }}" aria-label="{{ tr('Search requests') }}">
       <button>{{ tr('Search') }}</button>
     </form>
     <nav class="list-pagination" aria-label="{{ tr('Pagination') }}">
@@ -18,8 +19,10 @@
       <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('requests_list', q=q, page=page+1, open=open_arg) }}">›</a>
     </nav>
   </header>
+  <nav class="list-views" aria-label="{{ tr('Views') }}"><a href="{{ url_for('requests_list', q=q or none) }}" {% if not open_only %}class="active" aria-current="page"{% endif %}>{{ tr('All') }}</a><a href="{{ url_for('requests_list', q=q or none, open=1) }}" {% if open_only %}class="active" aria-current="page"{% endif %}>{{ tr('Open only') }}</a></nav>
+  {{ all_records(url_for('requests_list'), q) }}
   <div class="task-list-scroll">
-  <table class="task-list"><thead><tr><th>{{ tr('Request') }}</th><th>{{ tr('Requested for') }}</th><th>{{ tr('Items') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Opened') }}</th></tr></thead><tbody>
+  <table class="task-list record-list-table"><thead><tr><th>{{ tr('Request') }}</th><th>{{ tr('Requested for') }}</th><th>{{ tr('Items') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Opened') }}</th></tr></thead><tbody>
     {% for req in requests %}<tr>
       <td><a class="record-number" href="{{ url_for('request_detail', request_id=req.id) }}">{{ req.number }}</a></td>
       <td><span class="truncate" title="{{ req.requested_for.name }}">{{ req.requested_for.name }}</span></td>

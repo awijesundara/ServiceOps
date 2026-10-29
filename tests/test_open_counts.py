@@ -71,11 +71,13 @@ def test_requests_list_open_only_keeps_the_filter_while_paging_and_exporting(cli
     _seed(client, app)
     page = client.get("/requests?open=1").get_data(as_text=True)
     assert "REQ9000001" in page and "REQ9000002" not in page and "REQ9000004" not in page
-    assert "Show all requests" in page and 'name="open" value="1"' in page
+    all_link = re.search(r'<a\b[^>]*data-list-all[^>]*href="([^"]+)"', page)
+    assert all_link and unescape(all_link.group(1)) == "/requests"
+    assert re.search(r'<input[^>]+name="open"[^>]+form="requests-search"[^>]+checked', page)
     assert re.search(r'href="/requests/export\.csv\?[^"]*open=1"', page)
     export = client.get("/requests/export.csv?open=1").get_data(as_text=True)
     assert "REQ9000001" in export and "REQ9000003" not in export
-    everything = client.get("/requests").get_data(as_text=True)
+    everything = client.get(unescape(all_link.group(1))).get_data(as_text=True)
     assert "REQ9000004" in everything and "Open only" in everything
 
 

@@ -1,3 +1,4 @@
+{% from '_record_list.html' import native_filter, all_records, print_button %}
 {% extends "base.html" %}
 {% from '_status_badge.html' import status_badge %}
 {% block title %}{{ tr('Continual improvement · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
@@ -6,15 +7,9 @@
   <a class="primary button" href="#raise-improvement">+ {{ tr('Raise improvement') }}</a>
 </header>
 
-<form class="filters">
-  <select aria-label="{{ tr('Status') }}" name="status" data-auto-submit>
-    <option value="">{{ tr('All statuses') }}</option>
-    {% for state in states %}<option value="{{ state }}" {% if status_filter==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}
-  </select>
-</form>
-
+<section class="list-workspace"><header class="list-toolbar"><div class="list-title">{% call native_filter('improvements-search', q) %}<label class="record-native-field">{{ tr('Status') }}<select name="status" form="improvements-search" data-list-native-field><option value="">{{ tr('All statuses') }}</option>{% for state in states %}<option value="{{ state }}" {% if status_filter==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}</select></label>{% endcall %}<div><strong>{{ tr('Improvement register') }}</strong><small>{{ trn(items|length, '{count} record', '{count} records') }}</small></div></div>{{ print_button() }}<form class="list-search" id="improvements-search"><input name="q" value="{{ q }}" aria-label="{{ tr('Search') }}" placeholder="{{ tr('Search') }}"><button>{{ tr('Search') }}</button></form></header>{{ all_records(url_for('improvements'), q) }}
 <div class="task-list-scroll">
-  <table class="task-list">
+  <table class="task-list record-list-table">
     <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Title') }}</th><th>{{ tr('Source') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Owner') }}</th><th>{{ tr('Raised') }}</th></tr></thead>
     <tbody>
       {% for item in items %}
@@ -31,6 +26,7 @@
   </table>
 </div>
 
+</section>
 <section class="panel" id="raise-improvement">
   <h2>{{ tr('Raise an improvement') }}</h2>
   <form method="post" action="{{ url_for('improvement_new') }}" class="form-grid">

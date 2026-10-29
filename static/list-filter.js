@@ -13,7 +13,7 @@ const FILTER_OPERATORS = {
   date: [["before", tr("before")], ["after", tr("after")]],
 };
 
-function initListFilter(container) {
+function initListFilter(container, index) {
   let fields;
   try {
     fields = JSON.parse(container.dataset.filterFields || "{}");
@@ -30,13 +30,23 @@ function initListFilter(container) {
     initialConditions = [];
   }
 
-  const form = container.closest("form");
+  const form = container.closest("form") || document.getElementById(container.dataset.filterForm || "");
   const hiddenInput = form ? form.querySelector('input[name="filter"]') : null;
   const toggle = container.querySelector(".list-filter-toggle");
   const builder = container.querySelector(".list-filter-builder");
   const rowsHost = container.querySelector(".list-filter-rows");
   const addButton = container.querySelector(".list-filter-add");
   const clearButton = container.querySelector(".list-filter-clear");
+  const workspace = container.closest(".list-workspace");
+  const toggles = [...new Set([toggle, ...(workspace ? workspace.querySelectorAll("[data-list-filter-toggle]") : [])].filter(Boolean))];
+  if (!builder.id) builder.id = `list-filter-builder-${index}`;
+  toggles.forEach(button => button.setAttribute("aria-controls", builder.id));
+  let opener = toggle;
+  const setExpanded = expanded => toggles.forEach(button => button.setAttribute("aria-expanded", String(expanded)));
+
+  function associateControl(control) {
+    if (form?.id) control.setAttribute("form", form.id);
+  }
 
   function operatorOptions(fieldKey) {
     const type = fields[fieldKey] ? fields[fieldKey].type : "text";
@@ -53,6 +63,8 @@ function initListFilter(container) {
     if (type === "choice") {
       const select = document.createElement("select");
       select.className = "filter-value";
+      associateControl(select);
+      select.setAttribute("aria-label", fields[fieldKey].label);
       (fields[fieldKey].options || []).forEach(([optValue, optLabel]) => {
         const option = document.createElement("option");
         option.value = optValue;
@@ -65,12 +77,16 @@ function initListFilter(container) {
       const input = document.createElement("input");
       input.type = "date";
       input.className = "filter-value";
+      associateControl(input);
+      input.setAttribute("aria-label", fields[fieldKey].label);
       input.value = value || "";
       wrap.appendChild(input);
     } else {
       const input = document.createElement("input");
       input.type = "text";
       input.className = "filter-value";
+      associateControl(input);
+      input.setAttribute("aria-label", fields[fieldKey].label);
       input.placeholder = tr("Value");
       input.value = value || "";
       wrap.appendChild(input);
@@ -85,6 +101,8 @@ function initListFilter(container) {
 
     const fieldSelect = document.createElement("select");
     fieldSelect.className = "filter-field";
+    associateControl(fieldSelect);
+    fieldSelect.setAttribute("aria-label", tr("Field"));
     fieldKeys.forEach((key) => {
       const option = document.createElement("option");
       option.value = key;
@@ -95,6 +113,8 @@ function initListFilter(container) {
 
     const opSelect = document.createElement("select");
     opSelect.className = "filter-op";
+    associateControl(opSelect);
+    opSelect.setAttribute("aria-label", tr("Operator"));
     function refreshOps() {
       opSelect.innerHTML = "";
       operatorOptions(fieldSelect.value).forEach(([opValue, opLabel]) => {
@@ -136,29 +156,31 @@ function initListFilter(container) {
   // Applied conditions do not imply an open editor (for example dashboard links).
   builder.hidden = true;
   container.classList.remove("is-open");
-  toggle.setAttribute("aria-expanded", "false");
+  setExpanded(false);
 
-  toggle.addEventListener("click", () => {
+  toggles.forEach(button => button.addEventListener("click", () => {
+    opener = button;
     builder.hidden = !builder.hidden;
     container.classList.toggle("is-open", !builder.hidden);
-    toggle.setAttribute("aria-expanded", String(!builder.hidden));
+    setExpanded(!builder.hidden);
     if (!builder.hidden && !rowsHost.children.length) addRow();
-  });
+    if (!builder.hidden && button.hasAttribute("data-list-filter-toggle")) rowsHost.querySelector("select")?.focus();
+  }));
 
   // The builder floats over the list: close it on a click outside it or on
   // Escape. Conditions stay as edited until Apply.
   const closeBuilder = () => {
     builder.hidden = true;
     container.classList.remove("is-open");
-    toggle.setAttribute("aria-expanded", "false");
+    setExpanded(false);
   };
   document.addEventListener("click", (event) => {
-    if (!builder.hidden && !event.composedPath().includes(container)) closeBuilder();
+    if (!builder.hidden && !event.composedPath().includes(container) && !toggles.some(button => event.composedPath().includes(button))) closeBuilder();
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !builder.hidden) {
       closeBuilder();
-      toggle.focus();
+      opener.focus();
     }
   });
 
@@ -181,3 +203,47 @@ function initListFilter(container) {
     });
   }
 }
+
+// Pages with native query/status filters share the same left-hand editor.
+// Query mirrors have no name: only the existing form input is submitted.
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-native-list-filter]").forEach(container => {
+    const form = document.getElementById(container.dataset.filterForm);
+    const toggle = container.querySelector("[data-list-filter-toggle]");
+    const builder = container.querySelector(".list-filter-builder");
+    const mirror = container.querySelector("[data-list-query]");
+    const query = form?.querySelector('[name="q"]');
+    if (!form || !toggle || !builder) {
+      console.error("List filter requires a form, trigger and editor.");
+      return;
+    }
+    builder.id = `${form.id}-filters`;
+    toggle.setAttribute("aria-controls", builder.id);
+    const close = () => {builder.hidden = true; container.classList.remove("is-open"); toggle.setAttribute("aria-expanded", "false");};
+    close();
+    toggle.addEventListener("click", () => {
+      const opening = builder.hidden;
+      if (!opening) {close(); return;}
+      builder.hidden = false;
+      container.classList.add("is-open");
+      toggle.setAttribute("aria-expanded", "true");
+      (mirror || builder.querySelector('input,select'))?.focus();
+    });
+    if (mirror && query) {
+      mirror.value = query.value;
+      mirror.addEventListener("input", () => {query.value = mirror.value;});
+      query.addEventListener("input", () => {mirror.value = query.value;});
+    }
+    document.addEventListener("click", event => {if (!builder.hidden && !event.composedPath().includes(container)) close();});
+    document.addEventListener("keydown", event => {if (event.key === "Escape" && !builder.hidden) {close(); toggle.focus();}});
+    container.querySelector('[data-list-filter-clear]')?.addEventListener("click", () => {
+      if (query) query.value = "";
+      if (mirror) mirror.value = "";
+      builder.querySelectorAll('[data-list-native-field]').forEach(control => {
+        if (control.type === "checkbox") control.checked = false;
+        else control.value = "";
+      });
+      form.requestSubmit();
+    });
+  });
+});

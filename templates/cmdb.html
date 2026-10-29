@@ -1,29 +1,22 @@
+{% from '_admin_icons.html' import admin_icon %}
+{% from '_record_list.html' import advanced_filter, print_button %}
 {% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ tr('CMDB & service map · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ tr('IT OPERATIONS') }}</p><h1>{{ tr('CMDB & service map') }}<span class="info-tip" tabindex="0" data-tip="CMDB = Configuration Management Database: the system of record for every CI (Configuration Item) — a server, application, or service — and how they depend on one another.">i</span></h1><p>{{ tr('Configuration items and the dependencies that connect business services.') }}</p></div>{% if current_user.effective_role in ['admin','superadmin'] %}<a class="button" href="{{ url_for('cmdb_discovery') }}">⌕ {{ tr('Discovery') }}</a> <a class="button" href="{{ url_for('cmdb_topology') }}">◈ {{ tr('Topology') }}</a> <a class="button" href="{{ url_for('rack_list') }}">▤ {{ tr('Racks') }}</a> <a class="button" href="{{ url_for('cmdb_import') }}">⇪ {{ tr('Import') }}</a> <a class="button" href="{{ url_for('cmdb_permissions') }}">⛊ {{ tr('Permissions') }}</a> <a class="primary button" href="{{ url_for('ci_new') }}">+ {{ tr('New CI') }}</a>{% else %}<a class="button" href="{{ url_for('cmdb_topology') }}">◈ {{ tr('Topology') }}</a> <a class="button" href="{{ url_for('rack_list') }}">▤ {{ tr('Racks') }}</a>{% endif %}</header>
-{% set csv_url = url_for('cmdb_export', status=status, filter=raw_filter) %}
-{% include "_export_toolbar.html" %}
+{% set csv_url = url_for('cmdb_export', q=q, status=status, filter=raw_filter) %}
+
 <section class="stats"><a href="#configuration-items"><span>{{ tr('Configuration items') }}</span><strong>{{ cis_total }}</strong><small>{{ tr('Across all classes') }} →</small></a><a href="#service-relationships"><span>{{ tr('Relationships') }}</span><strong>{{ relationships_total }}</strong><small>{{ tr('Mapped dependencies') }} →</small></a><a href="{{ url_for('cmdb', status='Operational') }}"><span>{{ tr('Operational') }}</span><strong>{{ operational_total }}</strong><small>{{ tr('View healthy CIs') }} →</small></a></section>
 <section class="list-workspace" id="configuration-items">
   <header class="list-toolbar">
-    <div class="list-title"><span class="list-menu" aria-hidden="true">☰</span><div><strong>{{ tr('Configuration items') }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}{% if status %} · {{ tr('filtered to {status}', status=(tr_value(status))) }} <a href="{{ url_for('cmdb', q=q) }}">{{ tr('(clear)') }}</a>{% endif %}</small></div></div>
-    <form class="list-search">
+    <div class="list-title">{{ advanced_filter('records-search', filter_fields, raw_filter) }}<div><strong>{{ tr('Configuration items') }}</strong><small>{{ trn(total, '{count} record', '{count} records') }}{% if status %} · {{ tr('filtered to {status}', status=(tr_value(status))) }} <a href="{{ url_for('cmdb', q=q) }}">{{ tr('(clear)') }}</a>{% endif %}</small></div></div>
+    <a class="button" href="{{ csv_url }}">⬇ CSV</a>{{ print_button() }}
+    <form class="list-search" id="records-search">
       {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
       <input type="hidden" name="filter" value="{{ raw_filter }}">
       <input name="q" value="{{ q }}" placeholder="{{ tr('Name, serial, IP, model, vendor, location') }}" aria-label="{{ tr('Search configuration items') }}">
       <button>{{ tr('Search') }}</button>
-      <div class="list-filter" data-filter-fields='{{ filter_fields|tojson }}' data-filter-value='{{ raw_filter or "[]" }}'>
-        <button type="button" class="list-filter-toggle">▽ {{ tr('Filter') }}</button>
-        <div class="list-filter-builder" hidden>
-          <div class="list-filter-rows"></div>
-          <div class="list-filter-actions">
-            <button type="button" class="list-filter-add">+ {{ tr('Add condition') }}</button>
-            <button type="submit" class="primary">{{ tr('Run') }}</button>
-            <button type="button" class="list-filter-clear">{{ tr('Clear filter') }}</button>
-          </div>
-        </div>
-      </div>
+
     </form>
     <nav class="list-pagination" aria-label="{{ tr('Pagination') }}">
       <a class="{% if page <= 1 %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, filter=raw_filter, page=page-1) }}">‹</a>
@@ -31,7 +24,7 @@
       <a class="{% if page >= pages %}disabled{% endif %}" href="{{ url_for('cmdb', q=q, status=status, filter=raw_filter, page=page+1) }}">›</a>
     </nav>
     <div class="columns-picker" data-columns-key="cmdb" data-columns-target="#cmdb-table" data-columns-default-hidden='{{ default_hidden_columns|tojson }}'>
-      <button type="button" class="columns-picker-toggle">☰ {{ tr('Columns') }}</button>
+      <button type="button" class="columns-picker-toggle">{{ admin_icon('columns', 'toolbar-icon') }} {{ tr('Columns') }}</button>
       <div class="columns-picker-panel" hidden>
         <p class="muted u-m-0-0-4">{{ tr('Choose what shows in the table — CIs pulled from NetBox/CSV carry more fields than fit by default.') }}</p>
         <label><input type="checkbox" value="ci_class"> {{ tr('Class') }}</label>
@@ -53,9 +46,9 @@
       </div>
     </div>
   </header>
-  <div class="list-breadcrumb"><span>▽</span> {{ tr('All') }}{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › {{ tr('Search contains “{q}”', q=(q)) }}{% endif %}</div>
+  <div class="list-breadcrumb"><a class="ticket-all-link" data-list-all href="{{ url_for('cmdb', filter='[]') }}">{{ admin_icon('filter', 'toolbar-icon') }}{{ tr('All') }}</a>{% for part in breadcrumb_parts %} › {{ part }}{% endfor %}{% if q %} › {{ tr('Search contains “{q}”', q=(q)) }}{% endif %}</div>
   <div class="task-list-scroll">
-  <table class="task-list" id="cmdb-table"><thead><tr>
+  <table class="task-list record-list-table" id="cmdb-table"><thead><tr>
     <th>{{ tr('Name') }}</th>
     <th data-col="ci_class">{{ tr('Class') }}</th>
     <th data-col="environment">{{ tr('Environment') }}</th>

@@ -314,6 +314,16 @@ def _prepare_investigation(run, user, config, steps):
                     kinds={source["kind"] for source in sources}, identity_terms=identity_terms(user))
 
 
+def chat_history(run):
+    """Load only the twelve completed messages the model may replay."""
+    rows = AIMessage.query.filter(
+        AIMessage.conversation_id == run.conversation_id,
+        AIMessage.tenant_id == run.tenant_id,
+        AIMessage.status == "completed", AIMessage.id != run.message_id,
+    ).order_by(AIMessage.created_at.desc(), AIMessage.id.desc()).limit(12).all()
+    return list(reversed(rows))
+
+
 def _prepare_chat(run, user, config, steps):
     scope = access.build_scope(user, run.actor_role)
     steps.add("Confirmed who is asking", scope.summary())
@@ -323,8 +333,7 @@ def _prepare_chat(run, user, config, steps):
         steps.add("Declined", "This asks for something the assistant never has access to")
         return Prepared(refusal=code)
     reasons = set(routing.scan(question, config))
-    earlier = AIMessage.query.filter_by(conversation_id=run.conversation_id).order_by(AIMessage.created_at).all()
-    history = access.history_for_model(scope, [m for m in earlier if m.status == "completed" and m.id != run.message_id])
+    history = access.history_for_model(scope, chat_history(run))
     context_numbers = access.contextual_record_numbers(question, history)
     if config.memory_enabled:
         command = memory.parse_command(question)

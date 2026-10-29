@@ -1642,6 +1642,17 @@ html.theme-dark body main :is([data-scroll-region],[role=tabpanel]):focus-visibl
 html.theme-dark body main .email-scope-option{border:var(--border-width) solid var(--line)}
 html.theme-dark body main .email-scope-option small{color:var(--muted)}
 html.theme-dark body main .email-scope-option:has(input:checked){border-color:var(--dk-accent)}
+html.theme-dark body main .record-list-table>tbody>tr:nth-child(odd of :not(.approval-history-row)){background:var(--white)}
+html.theme-dark body main .record-list-table>tbody>tr:nth-child(even of :not(.approval-history-row)){background:var(--bg)}
+html.theme-dark body main .record-list-table>tbody>tr:is(:hover,:focus-within){background:var(--brand-teal-soft)}
+html.theme-dark body main .ticket-filter-menu{color:var(--ink)}
+html.theme-dark body main .ticket-filter-menu:hover,html.theme-dark body main .ticket-filter-menu[aria-expanded=true]{background:var(--brand-teal-soft);border-color:var(--control-border)}
+html.theme-dark body .toolbar-icon{fill:none;stroke:currentColor}
+html.theme-dark body main .ticket-all-link{color:var(--dk-accent)}
+html.theme-dark body main .ticket-all-link:hover{color:var(--ink)}
+html.theme-dark body select:not([multiple]):not([size]):not(.ai-model-pick):not(.ui-calendar-period *){background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%23687a80' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:16px 16px}
+html.theme-dark body main .record-list-filter .filter-row select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%23687a80' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:16px 16px}
+html.theme-dark body main .record-list-filter .filter-row-remove:hover{background:var(--brand-teal-soft)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */
