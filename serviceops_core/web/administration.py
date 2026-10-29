@@ -1396,6 +1396,9 @@ def register(app):
             return redirect(url_for("system_settings_category", category="organization") + "#company-logo")
         # "infrastructure" (read-only runtime values) is not a real
         # SETTING_DEFINITIONS group, but gets the same isolated-page treatment.
+        if category == "email_delivery":
+            # Email services have their own page (serviceops_core.web.email_services).
+            return redirect(url_for("email_services"))
         if category not in SETTING_DEFINITIONS and category != "infrastructure":
             abort(404)
         definitions = SETTING_DEFINITIONS.get(category, [])
@@ -1557,7 +1560,7 @@ def register(app):
             )
         admin_section_key = (
             "connections-channels"
-            if category in {"email_delivery", "netbox_connection", "snipeit_connection", "request_tracker_connection"}
+            if category in {"push_notifications", "netbox_connection", "snipeit_connection", "request_tracker_connection"}
             else "platform-security"
         )
         return render_template(

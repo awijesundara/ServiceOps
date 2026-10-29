@@ -10,21 +10,26 @@ from app import (
 from tests.test_app import client, app, login
 
 
-def test_muting_an_event_type_suppresses_the_notification_entirely(app):
+def test_muting_an_event_type_stops_only_its_email(app, monkeypatch):
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
+        admin.email = "admin@example.test"
         db.session.add(NotificationPreference(
             user_id=admin.id, muted_event_types=json.dumps(["sla.breached"]),
         ))
         db.session.commit()
-        before = Notification.query.filter_by(user_id=admin.id).count()
         result = create_notification(
             admin.id, "SLA breached: INC0000001", "body",
             tenant_id=admin.tenant_id, event_type="sla.breached",
         )
         db.session.commit()
-        assert result is None
-        assert Notification.query.filter_by(user_id=admin.id).count() == before
+        assert result is not None, "the in-app notification still arrives"
+        event = OutboxEvent.query.filter_by(event_type="notification.created").order_by(OutboxEvent.id.desc()).first()
+
+        def boom(*a, **k):
+            raise AssertionError("a muted event type must not be emailed")
+        monkeypatch.setattr("serviceops_core.mail.send", boom)
+        assert deliver_smtp(event) is False
 
 
 def test_unmuted_event_type_is_delivered_normally(app):
@@ -127,15 +132,25 @@ def test_notification_preferences_page_saves_email_and_mute_settings(client, app
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
         admin_id = admin.id
-    resp = client.post("/preferences", data={
-        "action": "notifications",
-        "mute_sla.breached": "on",
-    })
+    from serviceops_core.notification_templates import NOTIFICATION_EVENT_TYPES, NON_MUTABLE_EVENT_TYPES
+    wanted = {f"email_{key}": "on" for key in NOTIFICATION_EVENT_TYPES
+              if key not in NON_MUTABLE_EVENT_TYPES and key != "sla.breached"}
+    page = client.get("/preferences").data.decode()
+    assert 'name="email_sla.breached"' in page and 'data-enables="email-event-types"' in page
+    resp = client.post("/preferences", data={"action": "notifications", "email_enabled": "on", **wanted})
     assert resp.status_code == 302
     with app.app_context():
         pref = NotificationPreference.query.filter_by(user_id=admin_id).one()
-        assert pref.email_enabled is False  # checkbox omitted = unchecked
+        assert pref.email_enabled is True
         assert json.loads(pref.muted_event_types) == ["sla.breached"]
+    # Turning email off keeps the choices (the greyed switches are not submitted).
+    client.post("/preferences", data={"action": "notifications"})
+    with app.app_context():
+        pref = NotificationPreference.query.filter_by(user_id=admin_id).one()
+        assert pref.email_enabled is False
+        assert json.loads(pref.muted_event_types) == ["sla.breached"]
+    page = client.get("/preferences").data.decode()
+    assert 'id="email-event-types" disabled' in page
 
 
 def test_notification_templates_admin_requires_admin_role(client, app):

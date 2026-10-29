@@ -173,7 +173,7 @@ def test_preferences_explain_when_desktop_notifications_are_off(client, app):
     html = client.get("/preferences").get_data(as_text=True)
     # Visible (not hidden) so the reason can be shown; administrators get the setting link.
     assert '<div class="preference-row" data-web-push>' in html
-    assert "data-web-push-admin" in html and "/admin/settings/email_delivery" in html
+    assert "data-web-push-admin" in html and "/admin/settings/push_notifications" in html
     assert client.get("/push/config").get_json() == {"enabled": False, "public_key": None}
     login(client, "employee", "Employee123!")
     assert "data-web-push-admin" not in client.get("/preferences").get_data(as_text=True)

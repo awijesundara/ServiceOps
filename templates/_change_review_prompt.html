@@ -1,0 +1,33 @@
+{# A Resolved change cannot close until its post-implementation review is
+   recorded (transition_ticket). Shown at the top so the missing step is the
+   first thing anyone sees, with the form right here. #}
+{% if ticket.kind == 'change' and ticket.state == 'Resolved' and not ticket.deleted_at and not ticket.post_implementation_review %}
+<section class="change-review-prompt" id="change-review" aria-labelledby="change-review-title">
+  <div class="change-review-head">
+    <span class="change-review-step" aria-hidden="true">1</span>
+    <div>
+      <h2 id="change-review-title">{{ tr('One step before closing: post-implementation review') }}</h2>
+      <p>{{ tr('{number} cannot be closed until someone records how the change went. Write the outcome and a short summary below.', number=ticket.number) }}</p>
+    </div>
+  </div>
+  {% if can_manage_ticket or can_close %}
+  <form method="post" action="{{ url_for('change_pir_update', ticket_id=ticket.id) }}" class="change-review-form" data-change-review-form>
+    <label>{{ tr('Outcome') }}
+      <select name="outcome" required><option value="">{{ tr('Choose the outcome') }}</option>{% for value in pir_outcomes %}<option value="{{ value }}">{{ tr_value(value) }}</option>{% endfor %}</select>
+    </label>
+    <label class="wide">{{ tr('What happened') }}
+      <textarea name="summary" rows="3" required placeholder="{{ tr('Was the change implemented as planned? Any incidents, deviations or rollbacks?') }}"></textarea>
+    </label>
+    <label class="wide">{{ tr('Follow-up actions (optional)') }}
+      <textarea name="follow_up_actions" rows="2" placeholder="{{ tr('Lessons learned, problems to raise, documentation to update…') }}"></textarea>
+    </label>
+    <div class="wide change-review-actions">
+      {% if can_close %}<button class="primary" name="then_close" value="1">{{ tr('Save review and close {number}', number=ticket.number) }}</button>{% endif %}
+      <button class="{{ 'button' if can_close else 'primary' }}">{{ tr('Save review only') }}</button>
+    </div>
+  </form>
+  {% else %}
+  <p class="change-review-note">{{ tr('Only members of the assignment group can record the review. Ask the change owner to complete it.') }}</p>
+  {% endif %}
+</section>
+{% endif %}

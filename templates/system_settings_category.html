@@ -15,12 +15,16 @@
   <section class="panel settings-section">
     <div class="settings-grid">
     {% for setting in definitions if not setting.managed %}
-      <label class="setting-field {% if setting.type in ['json','text'] and setting.key|length > 20 %}wide{% endif %}">
+      <label class="setting-field {% if setting.multiline or (setting.type in ['json','text'] and setting.key|length > 20) %}wide{% endif %}" id="{{ setting.key }}">
         <span>{{ tr_value(setting.label) }} <small class="apply-badge {{ 'live' if setting.live else 'restart' }}">{{ tr('Live') if setting.live else tr('Restart required') }}</small></span>
         {% if setting.type == 'bool' %}
           <span class="switch-row"><input type="checkbox" name="{{ setting.key }}" {% if values[setting.key]|lower in ['true','1','yes','on'] %}checked{% endif %}> {{ tr('Enabled') }}</span>
         {% elif setting.type == 'choice' %}
           <select name="{{ setting.key }}">{% for choice in setting.choices %}<option value="{{ choice }}" {% if values[setting.key] == choice %}selected{% endif %}>{{ tr_value(setting.choice_labels[choice]) if setting.choice_labels else tr_value(choice|title) }}</option>{% endfor %}</select>
+        {% elif setting.multiline and setting.type == 'secret' %}
+          <textarea name="{{ setting.key }}" rows="4" spellcheck="false" autocomplete="off" placeholder="{{ tr('Configured — leave blank to retain') if setting.configured else tr('Not configured') }}"></textarea>
+        {% elif setting.multiline %}
+          <textarea name="{{ setting.key }}" rows="4" spellcheck="false">{{ values[setting.key] }}</textarea>
         {% elif setting.type == 'secret' %}
           <input type="password" name="{{ setting.key }}" value="" placeholder="{{ tr('Configured — leave blank to retain') if setting.configured else tr('Not configured') }}" autocomplete="new-password">
           {% if setting.key.endswith('_PROXY_URL') and setting.configured %}<span class="switch-row"><input type="checkbox" name="{{ setting.key }}_CLEAR"> {{ tr('Remove the system default proxy') if setting.key == 'OUTBOUND_PROXY_URL' else tr('Remove this custom proxy') }}</span>{% endif %}

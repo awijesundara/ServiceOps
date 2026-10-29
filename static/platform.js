@@ -221,6 +221,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // exactly the print-button bug this same pattern already fixed once).
   // A single delegated listener reading data-confirm works with the CSP
   // unchanged, same as data-print-page above.
+  // A master switch with data-enables="<fieldset id>" enables or greys out
+  // the switches that depend on it (email notification types). Disabled
+  // fields are not submitted, and the server keeps their saved values.
+  document.addEventListener("change", event => {
+    const id = event.target.dataset?.enables;
+    const group = id && document.getElementById(id);
+    if (!group) return;
+    group.disabled = !event.target.checked;
+    group.querySelectorAll("[data-text-enabled]").forEach(note => {
+      note.textContent = event.target.checked ? note.dataset.textEnabled : note.dataset.textDisabled;
+    });
+  });
   document.addEventListener("submit", event => {
     const form = event.target.closest("[data-confirm]");
     if (form && !window.confirm(form.dataset.confirm)) {
@@ -1078,4 +1090,26 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     render();
   }).catch(() => unavailable(tr("Desktop notifications could not be checked. Reload the page to try again.")));
+})();
+
+// A change's post-implementation review has its own form, but people often
+// type it and press the record's Update button. Carry a typed review into
+// that submit as pir_* fields so the server saves it before any move to Closed.
+(() => {
+  const record = document.getElementById("task-record-form");
+  if (!record) return;
+  record.addEventListener("submit", () => {
+    record.querySelectorAll("input[data-pir-copy]").forEach((input) => input.remove());
+    const forms = [...document.querySelectorAll("form[data-change-review-form]")];
+    const typed = forms.find((form) => (form.elements.summary?.value || "").trim() && (form.elements.summary.value !== form.elements.summary.defaultValue || form.elements.outcome.value !== [...form.elements.outcome.options].find((o) => o.defaultSelected)?.value));
+    if (!typed) return;
+    for (const name of ["outcome", "summary", "follow_up_actions"]) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = `pir_${name}`;
+      input.value = typed.elements[name]?.value || "";
+      input.dataset.pirCopy = "";
+      record.append(input);
+    }
+  });
 })();

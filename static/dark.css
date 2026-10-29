@@ -297,6 +297,20 @@ html.theme-dark .service-notice-row time{color:var(--muted)}
 html.theme-dark .service-notice-row small{color:var(--muted)}
 html.theme-dark .portal-notice-summary{color:var(--muted)}
 html.theme-dark .service-outage-since{color:var(--muted)}
+html.theme-dark .csat{border:1px solid var(--line);border-left:4px solid var(--brand-accent,#62503b);background:var(--panel,#182128)}
+html.theme-dark .csat-scale{border:0}
+html.theme-dark .csat-scale legend small{color:var(--muted)}
+html.theme-dark .csat-option{border:1px solid var(--line);background:var(--panel,#182128)}
+html.theme-dark .csat-label{color:var(--muted)}
+html.theme-dark .csat-option:hover{border-color:var(--dk-accent)}
+html.theme-dark .csat-option:has(input:focus-visible){outline:2px solid var(--dk-accent)}
+html.theme-dark .csat-option:has(input:checked){border-color:var(--dk-accent-strong);background:var(--green-dark);color:#fff}
+html.theme-dark .csat-option:has(input:checked) .csat-label{color:#ffffff}
+html.theme-dark .csat-done-stars{color:var(--line)}
+html.theme-dark .csat-done-stars .is-on{color:var(--brand-accent,#f9aa3c)}
+html.theme-dark .change-review-prompt{border:1px solid var(--line);border-left:4px solid var(--brand-accent,#62503b);background:var(--panel,#182128)}
+html.theme-dark .change-review-head p{color:var(--muted)}
+html.theme-dark .change-review-step{background:var(--brand-accent,#5e3c0b);color:#1d1d1d}
 /* enterprise.css */
 html.theme-dark .module-card{color:inherit}
 html.theme-dark .module-card:hover{border-color:#365750}
@@ -973,6 +987,32 @@ html.theme-dark .integration-icon{background:#1b2623;color:var(--dk-accent-stron
 html.theme-dark .table-secondary{color:var(--muted)}
 html.theme-dark .event-search{border:1px solid var(--line);background:#182128}
 html.theme-dark .event-search input{border:0!important;outline:0}
+html.theme-dark .email-switch{border-left:4px solid var(--muted)}
+html.theme-dark .email-switch.is-on{border-left-color:var(--dk-accent)}
+html.theme-dark .email-switch p{color:var(--muted)}
+html.theme-dark .email-section-title{color:var(--muted)}
+html.theme-dark .email-service.is-default{border-color:var(--dk-accent);box-shadow:0 0 0 1px var(--dk-accent)}
+html.theme-dark .email-service-title p{color:var(--muted)}
+html.theme-dark .email-provider-mark{background:var(--green-dark);color:#fff}
+html.theme-dark .email-role.is-default{background:var(--green-dark);color:#fff}
+html.theme-dark .email-role.is-fallback{border:1px solid var(--line);color:var(--ink)}
+html.theme-dark .email-service-status{color:var(--muted)}
+html.theme-dark .email-dot{background:var(--line)}
+html.theme-dark .email-dot.is-ok{background:var(--green)}
+html.theme-dark .email-dot.is-bad{background:#b42318}
+html.theme-dark .email-service-actions{border-top:1px solid var(--line)}
+html.theme-dark .email-provider-card{border:1px solid var(--line);color:inherit}
+html.theme-dark .email-provider-card:hover,html.theme-dark .email-provider-card:focus-visible{border-color:var(--dk-accent)}
+html.theme-dark .email-provider-card small{color:var(--muted)}
+html.theme-dark .email-methods{border:0}
+html.theme-dark .email-method{border:1px solid var(--line)}
+html.theme-dark .email-method:has(input:checked){border-color:var(--dk-accent);box-shadow:0 0 0 1px var(--dk-accent)}
+html.theme-dark .email-field small{color:var(--muted)}
+html.theme-dark .email-required{color:#ec8575}
+html.theme-dark .preference-group{border:1px solid var(--line)}
+html.theme-dark .preference-row-main{background:var(--surface-muted,transparent)}
+html.theme-dark .preference-subgroup{border:0;border-top:1px solid var(--line)}
+html.theme-dark .preference-subgroup legend small{color:var(--muted)}
 /* ai-chat.css */
 html.theme-dark .ai-run a:not(.button):not(.ai-cite){color:var(--dk-accent-strong)}
 html.theme-dark .ai-pill{background:var(--ai-soft);color:var(--dk-accent)}

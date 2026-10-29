@@ -30,9 +30,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='admin-workspace.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='dashboards.css', v=asset_version) }}">
-  {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=asset_version) }}">{% endif %}
+  {% if request.endpoint in ['integrations_admin', 'preferences'] or (request.endpoint and request.endpoint.startswith('email_service')) %}<link rel="stylesheet" href="{{ url_for('static', filename='notification-audiences.css', v=asset_version) }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='client-management.css', v=asset_version) }}">
-  {% if request.endpoint in ['integrations_admin', 'preferences'] %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=asset_version) }}">{% endif %}
+  {% if request.endpoint in ['integrations_admin', 'preferences'] or (request.endpoint and request.endpoint.startswith('email_service')) %}<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css', v=asset_version) }}">{% endif %}
   <script src="{{ url_for('static', filename='calendar.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='platform.js', v=asset_version) }}" defer></script>
   <script src="{{ url_for('static', filename='lookup.js', v=asset_version) }}" defer></script>
@@ -153,7 +153,8 @@
     {% elif request.endpoint == 'itil_admin_section' and request.view_args.get('section') in ['team-aliases','team-managers','executive-approval','governance-groups'] %}{% set admin_active_section = 'people-access' %}
     {% elif request.endpoint in ['itil_admin','itil_admin_section','approval_policies_admin','incident_handling_admin','workspace_teams_admin'] %}{% set admin_active_section = 'service-configuration' %}
     {% elif request.endpoint in ['integrations_admin','rt_import'] %}{% set admin_active_section = 'connections-channels' %}
-    {% elif request.endpoint == 'system_settings_category' and request.view_args.get('category') in ['email_delivery','netbox_connection','snipeit_connection','request_tracker_connection'] %}{% set admin_active_section = 'connections-channels' %}
+    {% elif request.endpoint and request.endpoint.startswith('email_service') %}{% set admin_active_section = 'connections-channels' %}
+    {% elif request.endpoint == 'system_settings_category' and request.view_args.get('category') in ['push_notifications','netbox_connection','snipeit_connection','request_tracker_connection'] %}{% set admin_active_section = 'connections-channels' %}
     {% elif request.endpoint in ['workflows_admin','workflows_scheduled','notification_templates_admin','guided_tours_admin'] %}{% set admin_active_section = 'automation-content' %}
     {% elif request.endpoint in ['system_settings_category','data_governance_admin','platform_tenants','system_health','system_health_log_file','audit_log','api_clients_admin'] %}{% set admin_active_section = 'platform-security' %}
     {% endif %}

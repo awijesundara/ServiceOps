@@ -193,3 +193,24 @@ input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
 .portal-notice-summary{padding:0 18px 12px;font-size:13px;color:var(--muted)}.portal-notice-more{display:block;padding:10px 18px;font-size:13px}.service-notice-pagination{display:flex;gap:18px;justify-content:center;align-items:center;padding:12px}
 @media(max-width:700px){.service-notice-row{flex-direction:column;gap:6px;padding:10px 12px}.service-notice-row time{white-space:normal}.service-notice-pagination{flex-wrap:wrap}}
 .service-outage-since{display:block;margin-top:3px;color:var(--muted);font-size:12px}
+/* Satisfaction rating on resolved records (_csat_prompt.html). */
+.csat{display:grid;grid-template-columns:minmax(0,auto) minmax(260px,1fr);gap:14px 24px;align-items:end;margin:0 0 16px;padding:16px 18px;border:1px solid var(--line);border-left:4px solid var(--brand-accent,#f9aa3c);border-radius:10px;background:var(--panel,#fff)}
+.csat-scale{margin:0;padding:0;border:0;min-width:0}.csat-scale legend{padding:0 0 10px;font-weight:750}.csat-scale legend small{display:block;margin-top:2px;font-weight:400;color:var(--muted)}
+.csat-options{display:flex;gap:6px;flex-wrap:wrap}
+.csat-option{position:relative;display:grid;justify-items:center;gap:2px;min-width:72px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:var(--panel,#fff)}
+.csat-option input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.csat-value{font-size:18px;font-weight:800;line-height:1.1}.csat-label{font-size:11px;color:var(--muted);white-space:nowrap}
+.csat-option:hover{border-color:var(--green)}
+.csat-option:has(input:focus-visible){outline:2px solid var(--green);outline-offset:2px}
+.csat-option:has(input:checked){border-color:var(--green-dark);background:var(--green-dark);color:#fff}.csat-option:has(input:checked) .csat-label{color:#fff}
+.csat-comment{display:flex;gap:8px;min-width:0}.csat-comment input{flex:1;min-width:0}.csat-comment button{flex:none}
+.csat-done{display:flex;align-items:center;gap:10px}.csat-done-stars{letter-spacing:2px;color:var(--line)}.csat-done-stars .is-on{color:var(--brand-accent,#f9aa3c)}
+@media(max-width:860px){.csat{grid-template-columns:1fr}.csat-option{min-width:0;flex:1 1 56px}}
+@media(max-width:480px){.csat-option{padding:10px 4px}.csat-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+/* Missing post-implementation review on a Resolved change (_change_review_prompt.html). */
+.change-review-prompt{margin:0 0 16px;padding:18px 20px;border:1px solid var(--line);border-left:4px solid var(--brand-accent,#f9aa3c);border-radius:10px;background:var(--panel,#fff)}
+.change-review-head{display:flex;gap:14px;align-items:flex-start}.change-review-head h2{margin:0 0 4px;font-size:17px}.change-review-head p{margin:0;color:var(--muted)}
+.change-review-step{display:grid;place-items:center;flex:none;width:30px;height:30px;border-radius:50%;background:var(--brand-accent,#f9aa3c);color:#1d1d1d;font-weight:800}
+.change-review-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:12px 18px;margin:16px 0 0 44px}.change-review-form label{display:grid;gap:6px;font-weight:650}.change-review-form .wide{grid-column:1/-1}
+.change-review-actions{display:flex;flex-wrap:wrap;gap:8px}.change-review-note{margin:12px 0 0 44px}
+@media(max-width:720px){.change-review-form{grid-template-columns:1fr;margin-left:0}.change-review-note{margin-left:0}}

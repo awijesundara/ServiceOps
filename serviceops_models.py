@@ -420,6 +420,39 @@ class PlatformSetting(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
 
 
+class MailService(db.Model):
+    """One configured way of sending email (serviceops_core.mail.PROVIDERS):
+    a SendGrid account, a Microsoft 365 app, an SMTP relay... Install-wide
+    like PlatformSetting. Several can be saved; the default sends, and the
+    fallback (if any) takes over when the default fails. `config_encrypted`
+    is the provider's fields, secrets included, as Fernet-encrypted JSON."""
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, default=tenant_context_id, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    provider = db.Column(db.String(40), nullable=False)
+    config_encrypted = db.Column(db.Text, nullable=False, default="")
+    is_default = db.Column(db.Boolean, nullable=False, default=False)
+    is_fallback = db.Column(db.Boolean, nullable=False, default=False)
+    last_tested_at = db.Column(db.DateTime(timezone=True))
+    last_test_ok = db.Column(db.Boolean)
+    last_test_message = db.Column(db.String(600))
+    last_used_at = db.Column(db.DateTime(timezone=True))
+    last_error = db.Column(db.String(600))
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime(timezone=True), default=now, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now, onupdate=now, nullable=False)
+
+    @property
+    def config(self):
+        if not self.config_encrypted:
+            return {}
+        return json.loads(settings_cipher().decrypt(self.config_encrypted.encode()).decode())
+
+    @config.setter
+    def config(self, value):
+        self.config_encrypted = settings_cipher().encrypt(json.dumps(value, sort_keys=True).encode()).decode()
+
+
 class KpiSnapshot(db.Model):
     """One captured value of a headline ITSM metric on a given day. /analytics
     computes everything live from current data, which means it can only

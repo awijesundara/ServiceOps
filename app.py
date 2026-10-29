@@ -1772,16 +1772,13 @@ def create_notification(user_id, title, body, tenant_id=None, target_type=None, 
                          event_type=None, template_vars=None):
     """`event_type`/`template_vars` are optional (B-130): when given, (1) a
     user who has muted that event_type in NotificationPreference gets
-    nothing at all -- no row, no outbox event, not just a suppressed email
-    -- and (2) an active tenant NotificationTemplate for that event_type
+    no email (deliver_smtp skips it; the in-app notification and other
+    channels still arrive) -- and (2) an active tenant NotificationTemplate for that event_type
     overrides the caller's literal title/body via ${var} substitution.
     Callers that omit event_type behave exactly as before: always
     delivered, using the literal title/body given."""
     tenant_id = tenant_id or tenant_context_id()
     if event_type:
-        preference = NotificationPreference.query.filter_by(user_id=user_id).first()
-        if preference and is_event_muted(preference.muted_event_types, event_type):
-            return None
         template = NotificationTemplate.query.filter_by(
             tenant_id=tenant_id, event_type=event_type, active=True,
         ).first()
@@ -2090,6 +2087,41 @@ def single_line_header(value):
     return " ".join(str(value).split())
 
 
+def _render_notification_email(message, payload):
+    """The branded HTML and text body for one notification email."""
+    from serviceops_core.email_render import render_email
+    from serviceops_core.public_url import public_origin
+    from serviceops_core.notification_templates import NOTIFICATION_EVENT_TYPES
+    event_type = payload.get("notification_event_type")
+    origin = public_origin()
+    link = preferences = reference = None
+    if origin:
+        try:
+            with current_app.test_request_context("/"):
+                if payload.get("target_type"):
+                    path = notification_target_url(payload.get("target_type"), payload.get("target_id"))
+                    link = origin + path if path and path.startswith("/") else None
+                preferences = origin + url_for("preferences") + "#notifications"
+        except Exception:  # noqa: BLE001 - a missing link must never stop the email
+            current_app.logger.warning("Email links could not be built for %s", payload.get("target_type"), exc_info=True)
+    if payload.get("target_type") and payload.get("target_id"):
+        try:
+            record = record_reference(payload["target_type"], payload["target_id"])
+            reference = getattr(record, "number", None) or getattr(record, "key", None)
+        except Exception:  # noqa: BLE001
+            reference = None
+    severity = notification_severity_for_event(event_type) if event_type else None
+    render_email(
+        message, title=payload["title"], body=payload["body"],
+        eyebrow=(NOTIFICATION_EVENT_TYPES.get(event_type) or {}).get("label") or "Notification",
+        severity=severity if severity in ("critical", "warning") else None,
+        link_url=link, link_label=f"Open {reference}" if reference else "Open in ServiceOps",
+        reference=reference if reference and reference not in payload["title"] else None,
+        preferences_url=preferences,
+        reason="You receive this because of your role or your activity in ServiceOps.",
+    )
+
+
 def deliver_smtp(event):
     """Returns True once actually sent, False if intentionally skipped
     because the recipient has disabled email notifications (B-130) --
@@ -2102,85 +2134,27 @@ def deliver_smtp(event):
         raise RuntimeError("Notification recipient is unavailable.")
     preference = NotificationPreference.query.filter_by(user_id=user.id).first()
     notification_event_type = payload.get("notification_event_type")
-    if (
-        preference and not preference.email_enabled
-        and notification_event_type not in NON_MUTABLE_EVENT_TYPES
+    if preference and notification_event_type not in NON_MUTABLE_EVENT_TYPES and (
+        not preference.email_enabled
+        or (notification_event_type and is_event_muted(preference.muted_event_types, notification_event_type))
     ):
         return False
-    provider = setting_value("SMTP_PROVIDER", "generic")
-    provider_defaults = {
-        "google_workspace_relay": ("smtp-relay.gmail.com", "none"),
-        "google_workspace_app_password": ("smtp.gmail.com", "password"),
-        "google_workspace_oauth2": ("smtp.gmail.com", "oauth2"),
-    }
-    default_host, default_auth = provider_defaults.get(provider, ("", "password"))
-    host = setting_value("SMTP_HOST", "") or default_host
-    sender = setting_value("SMTP_FROM", "")
-    if not host or not sender:
-        raise RuntimeError("SMTP host and from address are required.")
     message = EmailMessage()
-    message["From"] = formataddr((setting_value("SMTP_FROM_NAME", "ServiceOps"), sender))
+    sender = setting_value("SMTP_FROM", "") or setting_value("MS_SENDER_MAILBOX", "")
+    if sender:
+        message["From"] = formataddr((setting_value("SMTP_FROM_NAME", "ServiceOps"), sender))
     message["To"] = user.email
     message["Subject"] = single_line_header(payload["title"])
     reply_to = setting_value("SMTP_REPLY_TO", "")
     if reply_to:
         message["Reply-To"] = reply_to
-    message["X-ServiceOps-Event-ID"] = event.event_id
+    message["X-ServiceOps-Event-ID"] = single_line_header(event.event_id)
     message["Auto-Submitted"] = "auto-generated"
-    message.set_content(payload["body"])
-    security = setting_value(
-        "SMTP_SECURITY", "starttls" if setting_bool("SMTP_STARTTLS", True) else "none"
-    )
-    port = setting_int("SMTP_PORT", 465 if security == "tls" else 587)
-    timeout = setting_int("SMTP_TIMEOUT_SECONDS", 10)
-    smtp_class = smtplib.SMTP_SSL if security == "tls" else smtplib.SMTP
-    kwargs = {"timeout": timeout}
-    if security == "tls":
-        kwargs["context"] = ssl.create_default_context()
-    smtp_proxy_url = resolve_smtp_proxy_url()
-    smtp_proxies = {"http": smtp_proxy_url, "https": smtp_proxy_url} if smtp_proxy_url else None
-    # tunnel_through_proxy(None) is a deliberate no-op (see its docstring),
-    # so this always wraps rather than branching on whether a proxy is
-    # configured -- smtplib has no native proxy support (SMTP isn't HTTP),
-    # so reaching an external mail relay in a deployment without direct
-    # internet access requires tunneling the raw TCP connection through an
-    # HTTP(S) proxy's CONNECT method.
-    with tunnel_through_proxy(smtp_proxy_url), smtp_class(host, port, **kwargs) as smtp:
-        smtp.ehlo()
-        if security == "starttls":
-            smtp.starttls(context=ssl.create_default_context())
-            smtp.ehlo()
-        username = setting_value("SMTP_USERNAME", "")
-        auth_mode = setting_value("SMTP_AUTH_MODE", default_auth)
-        if security == "none" and auth_mode != "none":
-            raise RuntimeError("SMTP authentication requires STARTTLS or implicit TLS.")
-        if auth_mode == "oauth2":
-            client_id = setting_value("SMTP_OAUTH_CLIENT_ID", "")
-            client_secret = setting_value("SMTP_OAUTH_CLIENT_SECRET", "")
-            refresh_token = setting_value("SMTP_OAUTH_REFRESH_TOKEN", "")
-            if not all((username, client_id, client_secret, refresh_token)):
-                raise RuntimeError("Google OAuth username, client ID, client secret and refresh token are required.")
-            token_response = requests.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "client_id": client_id, "client_secret": client_secret,
-                    "refresh_token": refresh_token, "grant_type": "refresh_token",
-                },
-                proxies=smtp_proxies, timeout=timeout,
-            )
-            token_response.raise_for_status()
-            access_token = token_response.json().get("access_token")
-            if not access_token:
-                raise RuntimeError("Google OAuth token response did not include an access token.")
-            auth = base64.b64encode(
-                f"user={username}\x01auth=Bearer {access_token}\x01\x01".encode()
-            ).decode()
-            code, response = smtp.docmd("AUTH", "XOAUTH2 " + auth)
-            if code not in {235, 250}:
-                raise RuntimeError(f"Google OAuth SMTP authentication failed ({code}).")
-        elif auth_mode == "password" and username:
-            smtp.login(username, setting_value("SMTP_PASSWORD", ""))
-        smtp.send_message(message)
+    _render_notification_email(message, payload)
+    # serviceops_core.mail sends with the default email service, then the
+    # fallback; with none saved, with the email platform settings.
+    from serviceops_core.mail import send as send_mail
+    send_mail(message)
     return True
 
 
@@ -8145,6 +8119,7 @@ def create_app(test_config=None):
         client_management,
         dashboards,
         cmdb,
+        email_services,
         incident_admin,
         groups,
         itam,
@@ -8174,6 +8149,7 @@ def create_app(test_config=None):
     incident_admin.register(app)
     service_requests.register(app)
     projects.register(app)
+    email_services.register(app)
 
     @app.after_request
     def security_headers(response):
