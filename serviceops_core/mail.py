@@ -558,13 +558,31 @@ _STANDARD_HEADERS = {"from", "to", "cc", "bcc", "subject", "content-type", "cont
                      "mime-version", "date", "reply-to"}
 
 
+def _linked_images(message):
+    """{content id: public URL} for inline images that also have a public
+    copy, so an email API can link to them instead of attaching them."""
+    return {part["Content-ID"].strip().strip("<>"): str(part["X-ServiceOps-Public-URL"])
+            for part in message.walk()
+            if part.get("Content-ID") and part.get("X-ServiceOps-Public-URL")}
+
+
+def _link_images(html, linked):
+    for content_id, url in linked.items():
+        html = html.replace(f"cid:{content_id}", url)
+    return html
+
+
 def _inline_images(message):
     """The images an HTML body shows by cid: (the company logo), as
-    (content id without brackets, MIME type, base64 data, filename)."""
+    (content id without brackets, MIME type, base64 data, filename).
+    Images with a public copy are linked instead (see _linked_images)."""
     images = []
+    linked = _linked_images(message)
     for part in message.walk():
         content_id = part.get("Content-ID")
         if part.is_multipart() or not content_id or part.get_content_maintype() != "image":
+            continue
+        if content_id.strip().strip("<>") in linked:
             continue
         data = base64.b64encode(part.get_payload(decode=True) or b"").decode("ascii")
         images.append((content_id.strip().strip("<>"), part.get_content_type(), data,
@@ -585,6 +603,7 @@ def _api_key():
 
 def send_sendgrid(message):
     text, html = _parts(message)
+    html = _link_images(html, _linked_images(message)) if html else html
     content = [{"type": "text/plain", "value": text or ""}] + ([{"type": "text/html", "value": html}] if html else [])
     sender = parseaddr(str(message["From"]))
     body = {
@@ -619,6 +638,7 @@ def send_mailgun(message):
 
 def send_postmark(message):
     text, html = _parts(message)
+    html = _link_images(html, _linked_images(message)) if html else html
     body = {
         "From": str(message["From"]), "To": ",".join(recipients_of(message)),
         "Subject": str(message["Subject"] or ""), "TextBody": text or "",

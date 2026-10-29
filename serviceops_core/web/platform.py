@@ -358,6 +358,17 @@ def register(app):
         return send_from_directory(app.config["UPLOAD_FOLDER"], "company-logo.png",
                                    mimetype="image/png", max_age=300)
 
+    @app.get("/email/logo.png")
+    def email_logo():
+        """The logo notification emails show, public so mail apps can load it
+        when an email service sends the logo as a link (SendGrid, Postmark)
+        rather than embedded: the company logo, or the ServiceOps mark."""
+        if os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "company-logo.png")):
+            return send_from_directory(app.config["UPLOAD_FOLDER"], "company-logo.png",
+                                       mimetype="image/png", max_age=3600)
+        return send_from_directory(os.path.join(app.static_folder, "brand"), "serviceops-mark.png",
+                                   mimetype="image/png", max_age=3600)
+
     @app.get("/help")
     @login_required
     def help_center():
