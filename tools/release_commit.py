@@ -4,7 +4,7 @@
 `main` requires verified signatures. A commit made with `git commit` inside
 Actions is unsigned and is rejected, so the release commit is created with
 GraphQL `createCommitOnBranch` instead: GitHub signs commits it creates for
-the workflow token. The tag is created only after that commit has landed on
+the release token. The tag is created only after that commit has landed on
 `main`, so a failed run can never leave a tag on a commit outside `main`.
 
 GitHub does not sign tag objects created through its API, so the tag is made

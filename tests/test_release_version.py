@@ -181,7 +181,9 @@ def test_release_commit_refuses_unexpected_changes(monkeypatch):
 
 def test_release_workflow_signs_through_the_api_and_skips_taken_tags():
     release_workflow = (ROOT / ".github/workflows/release.yml").read_text()
-    assert 'run: python3 tools/release_commit.py "$TAG"' in release_workflow
+    assert 'python3 tools/release_commit.py "$TAG"' in release_workflow
+    # The direct release commit to main uses the owner's token (repository admin bypass).
+    assert "GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}" in release_workflow
     assert "RELEASE_TAG_SIGNING_KEY: ${{ secrets.RELEASE_TAG_SIGNING_KEY }}" in release_workflow
     assert "git push origin HEAD:main" not in release_workflow
     assert 'while git rev-parse -q --verify "refs/tags/v${version}"' in release_workflow
