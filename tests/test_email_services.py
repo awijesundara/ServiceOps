@@ -393,6 +393,13 @@ def test_by_default_only_what_involves_the_recipient_is_emailed(app, monkeypatch
         theirs.assignee_id = admin.id
         db.session.commit()
         assert deliver_smtp(_queued_email(admin, target_type="ticket", target_id=theirs.id)) is True, "assigned to me"
+        assert deliver_smtp(_queued_email(admin, target_type="approval_queue")) is True, "a reapproval request"
+        from serviceops_models import Contract
+        owned = Contract(name="Support", owner_id=admin.id, tenant_id=admin.tenant_id)
+        db.session.add(owned)
+        db.session.commit()
+        assert deliver_smtp(_queued_email(admin, target_type="contract", target_id=owned.id,
+                                          event_type="contract.notice")) is True, "a contract I own"
         db.session.add(NotificationPreference(user_id=admin.id, email_scope="all"))
         db.session.commit()
         assert deliver_smtp(_queued_email(admin, event_type="sla.breached")) is True, "chose everything"

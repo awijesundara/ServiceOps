@@ -19,16 +19,19 @@ PERSONAL_EVENT_TYPES = {
     "approval.requested", "enterprise.approval_requested",
 }
 
+# Targets that are always addressed to the recipient (an approver's queue).
+PERSONAL_TARGET_TYPES = {"approval_queue"}
+
 # People fields that make someone part of a record.
 _PEOPLE_FIELDS = ("assignee_id", "requester_id", "opened_by_id", "created_by_id",
-                  "requested_by_id", "requested_for_id", "reporter_id")
+                  "requested_by_id", "requested_for_id", "reporter_id", "owner_id")
 
 
 def _record(target_type, target_id):
     import app as core
-    from serviceops_models import CatalogRequest, CatalogTask, ClientTicket, OperationalTask
+    from serviceops_models import CatalogRequest, CatalogTask, ClientTicket, Contract, OperationalTask
     extra = {"client_ticket": ClientTicket, "catalog_task": CatalogTask,
-             "operational_task": OperationalTask, "request": CatalogRequest}
+             "operational_task": OperationalTask, "request": CatalogRequest, "contract": Contract}
     model = extra.get(target_type)
     if model is not None:
         return core.db.session.get(model, target_id)
@@ -53,6 +56,8 @@ def _people(record, depth=0):
 def involves_recipient(user_id, payload):
     """True when the notification in `payload` involves `user_id`."""
     if payload.get("notification_event_type") in PERSONAL_EVENT_TYPES:
+        return True
+    if payload.get("target_type") in PERSONAL_TARGET_TYPES:
         return True
     target_type, target_id = payload.get("target_type"), payload.get("target_id")
     if not target_type or not target_id:
