@@ -309,3 +309,53 @@ def test_a_service_without_reply_to_drops_a_leftover_one(app, monkeypatch):
         finally:
             mail._service_settings.reset(token)
     assert sent[0]["Reply-To"] is None
+
+
+@pytest.mark.parametrize("transport", ["sendgrid", "postmark"])
+def test_json_api_transports_link_the_logo_instead_of_attaching_it(app, tmp_path, monkeypatch, transport):
+    from serviceops_core.email_render import render_email
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://desk.example.test")
+    monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+    calls = []
+    monkeypatch.setattr(mail.requests, "post", lambda url, **kw: calls.append(kw) or type(
+        "R", (), {"status_code": 200, "raise_for_status": lambda self: None})())
+    with app.app_context(), app.test_request_context("/"):
+        message = outgoing()
+        render_email(message, title="T", body="B")
+        token = mail._service_settings.set({"MAIL_TRANSPORT": transport, "MAIL_API_KEY": "k"})
+        try:
+            getattr(mail, f"send_{transport}")(message)
+        finally:
+            mail._service_settings.reset(token)
+    body = calls[0]["json"]
+    html = body["content"][1]["value"] if transport == "sendgrid" else body["HtmlBody"]
+    assert 'src="https://desk.example.test/email/logo.png"' in html and "cid:" not in html
+    assert not body.get("attachments") and not body.get("Attachments"), "no logo.png attachment"
+
+
+def test_email_logo_is_public_and_falls_back_to_the_serviceops_mark(client, app, tmp_path, monkeypatch):
+    monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+    response = client.get("/email/logo.png")
+    assert response.status_code == 200 and response.mimetype == "image/png"
+    with open(f"{app.static_folder}/brand/serviceops-mark.png", "rb") as handle:
+        assert response.data == handle.read()
+
+
+def test_linked_logo_keeps_the_deployment_path_prefix(app, tmp_path, monkeypatch):
+    from serviceops_core.email_render import render_email
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://desk.example.test/serviceops/")
+    monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+    with app.app_context(), app.test_request_context("/"):
+        message = outgoing()
+        render_email(message, title="T", body="B")
+    assert list(mail._linked_images(message).values()) == ["https://desk.example.test/serviceops/email/logo.png"]
+
+
+def test_without_a_public_url_the_logo_stays_embedded(app, tmp_path, monkeypatch):
+    from serviceops_core.email_render import render_email
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+    with app.app_context(), app.test_request_context("/"):
+        message = outgoing()
+        render_email(message, title="T", body="B")
+    assert mail._linked_images(message) == {} and mail._inline_images(message)

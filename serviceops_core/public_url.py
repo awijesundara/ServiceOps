@@ -26,6 +26,16 @@ def public_origin():
     return None
 
 
+def public_base_url():
+    """PUBLIC_BASE_URL with its path kept (a deployment under a reverse-proxy
+    prefix such as /serviceops), for links built outside a request, as in
+    the outbox worker. None when it is not a usable http(s) URL."""
+    parts = urlsplit(os.getenv("PUBLIC_BASE_URL", "").strip())
+    if parts.scheme not in {"http", "https"} or not parts.netloc or "@" in parts.netloc:
+        return None
+    return f"{parts.scheme}://{parts.netloc}{parts.path.rstrip('/')}"
+
+
 def public_url_for(endpoint, **values):
     """Like `url_for(endpoint, _external=True)`, but anchored to the
     configured public origin when there is one. The path still comes from
