@@ -3,6 +3,7 @@ tools/i18n_interface_values.py from the source; do not edit by hand."""
 from serviceops_core.localization import translatable
 
 VALUES = (
+    translatable("A company mail relay that accepts mail from this server's IP address, with no sign-in (port 25)."),
     translatable("A dashboard's widgets with their data, as the web shows them"),
     translatable('A mail program on this server: Postfix, Exim or msmtp.'),
     translatable("A project's components"),
@@ -278,6 +279,7 @@ VALUES = (
     translatable('Integer'),
     translatable('Interactive API guide'),
     translatable('Interactive Google Chat app credentials: reads /commands typed in reply to an alert (via Cloud Pub/Sub -- no internet-facing endpoint required) and posts threaded replies back.'),
+    translatable('Internal SMTP relay'),
     translatable('Internal Server Error'),
     translatable('Internal user'),
     translatable('Investigating'),
