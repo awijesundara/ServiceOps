@@ -1307,6 +1307,9 @@ def register(app):
                 if notification_pref.email_enabled:
                     muted = [key for key in mutable_event_types if not request.form.get(f"email_{key}")]
                     notification_pref.muted_event_types = json.dumps(muted)
+                    from serviceops_core.email_relevance import EMAIL_SCOPES, INVOLVING_ME
+                    scope = request.form.get("email_scope", INVOLVING_ME)
+                    notification_pref.email_scope = scope if scope in EMAIL_SCOPES else INVOLVING_ME
                 audit("update", "Notification preferences", current_user.username)
                 db.session.commit()
                 flash(tr("Notification preferences saved."), "success")

@@ -58,6 +58,11 @@
       {% if mutable_event_types %}
       <fieldset class="preference-subgroup" id="email-event-types" {% if not notification_pref.email_enabled %}disabled{% endif %}>
         <legend>{{ tr('Email me about') }}</legend><p class="preference-group-hint" data-text-enabled="{{ tr('Turn off the ones you do not want by email.') }}" data-text-disabled="{{ tr('Turn on email notifications to choose.') }}">{{ tr('Turn off the ones you do not want by email.') if notification_pref.email_enabled else tr('Turn on email notifications to choose.') }}</p>
+        {% set scope = notification_pref.email_scope or 'involving_me' %}
+        <div class="email-scope" role="radiogroup" aria-label="{{ tr('Which notifications to email') }}">
+          <label class="email-scope-option"><input type="radio" name="email_scope" value="involving_me" {% if scope != 'all' %}checked{% endif %}><span><strong>{{ tr('Things that involve me') }}</strong><small>{{ tr('Work assigned to me, mentions, approvals waiting on me, and updates to tickets and requests I raised or own.') }}</small></span></label>
+          <label class="email-scope-option"><input type="radio" name="email_scope" value="all" {% if scope == 'all' %}checked{% endif %}><span><strong>{{ tr('Everything I am notified about') }}</strong><small>{{ tr('Also team queue notices, SLA alerts and escalations. Every notification is always in the in-app inbox.') }}</small></span></label>
+        </div>
         {% for key, meta in mutable_event_types.items() %}
         <div class="preference-row"><div><strong>{{ tr_value(meta.label) }}</strong><small>{{ meta.description }}</small></div><label class="switch"><input type="checkbox" name="email_{{ key }}" aria-label="{{ tr_value(meta.label) }}" {% if key not in muted_types %}checked{% endif %}><span></span></label></div>
         {% endfor %}

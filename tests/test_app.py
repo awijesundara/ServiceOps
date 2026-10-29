@@ -1328,6 +1328,7 @@ def test_durable_smtp_signed_webhook_and_teams_delivery(monkeypatch, app):
                     scope_type="user", owner_user_id=admin.id, created_by_id=admin.id,
             ),
         ])
+        db.session.add(__import__("app").NotificationPreference(user_id=admin.id, email_scope="all"))  # a broadcast: emailed only with "everything"
         create_notification(
             admin.id, "Integration test", "Durable delivery body."
         )
@@ -1379,6 +1380,7 @@ def test_google_chat_and_filtered_webhook_delivery(monkeypatch, app):
                 created_by_id=admin.id,
             ),
         ])
+        db.session.add(__import__("app").NotificationPreference(user_id=admin.id, email_scope="all"))  # a broadcast: emailed only with "everything"
         create_notification(admin.id, "Approval required", "Review CHG001")
         db.session.commit()
         assert process_outbox() == 1
@@ -1547,6 +1549,8 @@ def test_google_workspace_oauth2_smtp_refresh_and_xoauth2(monkeypatch, app):
             db.session.add(PlatformSetting(
                 key=key, value=settings_cipher().encrypt(value.encode()).decode(), encrypted=True,
             ))
+        # A plain notification about no record is emailed only with "everything".
+        db.session.add(__import__("app").NotificationPreference(user_id=admin.id, email_scope="all"))
         event = OutboxEvent(
             event_type="notification.created",
             payload_json=json.dumps({"user_id": admin.id, "title": "Test", "body": "Body"}),
