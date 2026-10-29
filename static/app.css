@@ -218,3 +218,8 @@ input[disabled],input[readonly]{overflow:hidden;text-overflow:ellipsis}
 /* A second line under a table cell's main value. */
 .cell-note{display:block;margin-top:2px;color:var(--muted);font-weight:400;font-size:12px}
 .stack input[type=color]{width:72px;height:40px;padding:4px}
+
+/* Phones: record numbers, tags and status badges never break mid-word;
+   wide tables keep readable columns and scroll inside their panel. */
+table .tag,table .badge,table .status-badge,table code{white-space:nowrap}
+@media(max-width:720px){main :is(.panel,.list-workspace,.table-panel,.task-list-scroll)>table,main .table-scroll>table{min-width:600px}main :is(.panel,.list-workspace,.table-panel,.task-list-scroll):has(>table){overflow-x:auto}}
