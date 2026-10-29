@@ -339,3 +339,23 @@ def test_email_logo_is_public_and_falls_back_to_the_serviceops_mark(client, app,
     assert response.status_code == 200 and response.mimetype == "image/png"
     with open(f"{app.static_folder}/brand/serviceops-mark.png", "rb") as handle:
         assert response.data == handle.read()
+
+
+def test_linked_logo_keeps_the_deployment_path_prefix(app, tmp_path, monkeypatch):
+    from serviceops_core.email_render import render_email
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://desk.example.test/serviceops/")
+    monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+    with app.app_context(), app.test_request_context("/"):
+        message = outgoing()
+        render_email(message, title="T", body="B")
+    assert list(mail._linked_images(message).values()) == ["https://desk.example.test/serviceops/email/logo.png"]
+
+
+def test_without_a_public_url_the_logo_stays_embedded(app, tmp_path, monkeypatch):
+    from serviceops_core.email_render import render_email
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+    with app.app_context(), app.test_request_context("/"):
+        message = outgoing()
+        render_email(message, title="T", body="B")
+    assert mail._linked_images(message) == {} and mail._inline_images(message)

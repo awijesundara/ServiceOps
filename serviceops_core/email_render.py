@@ -14,7 +14,7 @@ from email.utils import make_msgid
 
 from flask import current_app
 
-from serviceops_core.public_url import public_origin
+from serviceops_core.public_url import public_base_url
 
 SEVERITY_COLORS = {"critical": "#b42318", "warning": "#b54708", "info": None}
 _HEX = re.compile(r"#[0-9a-fA-F]{6}")
@@ -86,7 +86,8 @@ def render_email(message, *, title, body, eyebrow="", reason="", link_url=None, 
         # Email APIs that rebuild the message (SendGrid, Postmark) turn an
         # embedded image into an attachment many mail apps list as
         # "logo.png"; they link to this public copy instead.
-        origin = public_origin()
-        if origin:
-            html_part.get_payload()[-1]["X-ServiceOps-Public-URL"] = f"{origin}/email/logo.png"
+        # Without a usable public URL the logo stays embedded.
+        base = public_base_url()
+        if base:
+            html_part.get_payload()[-1]["X-ServiceOps-Public-URL"] = f"{base}/email/logo.png"
     return message
