@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ tr('Email delivery') }} · {{ instance_name }}{% endblock %}
 {% block content %}
+{% from '_admin_icons.html' import admin_icon %}
 {% set admin_page_title = tr('Email delivery') %}{% set admin_parent_title = tr('Connections & channels') %}{% set admin_parent_url = url_for('admin_section', section='connections-channels') %}{% include '_admin_context.html' %}
 <div class="email-admin">
-<header class="settings-page-head"><div><p class="eyebrow">{{ tr('Connections & channels')|upper }}</p><h1>{{ tr('Email delivery') }}</h1><p>{{ tr('Save every email service you use, then choose which one sends. A fallback takes over automatically when the default fails.') }}</p></div><span class="settings-page-symbol" aria-hidden="true">✉</span></header>
+<header class="settings-page-head"><div><p class="eyebrow">{{ tr('Connections & channels')|upper }}</p><h1>{{ tr('Email delivery') }}</h1><p>{{ tr('Save every email service you use, then choose which one sends. A fallback takes over automatically when the default fails.') }}</p></div><span class="settings-page-symbol" aria-hidden="true">{{ admin_icon('mail') }}</span></header>
 
 <section class="panel email-switch {{ 'is-on' if enabled else 'is-off' }}">
   <div><h2>{{ tr('Email notifications are on') if enabled else tr('Email notifications are off') }}</h2>

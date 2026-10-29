@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ tr_value(title) }} · {{ instance_name }}{% endblock %}
 {% block content %}
+{% from '_admin_icons.html' import admin_icon %}
 {% set parent_title = tr('Connections & channels') if admin_section_key == 'connections-channels' else tr('Platform & security') %}
 {% set admin_page_title = title %}{% set admin_parent_title = parent_title %}{% set admin_parent_url = url_for('admin_section', section=admin_section_key) %}{% include '_admin_context.html' %}
 <div class="settings-console admin-console admin-console-single">
 <section class="settings-console-main">
-<header class="settings-page-head"><div><p class="eyebrow">{{ parent_title|upper }}</p><h1>{{ tr_value(title) }}</h1><p>{{ tr_value(description) }}</p></div><span class="settings-page-symbol" aria-hidden="true">⚙</span></header>
+<header class="settings-page-head"><div><p class="eyebrow">{{ parent_title|upper }}</p><h1>{{ tr_value(title) }}</h1><p>{{ tr_value(description) }}</p></div><span class="settings-page-symbol" aria-hidden="true">{{ admin_icon({'appearance':'palette','organization':'people','security':'security','sign_in_and_directory':'key','infrastructure':'database','push_notifications':'mail','email_delivery':'mail','outbound_network':'connections','workspace_defaults':'settings','my_workspace_widgets':'settings'}.get(category, 'connections' if admin_section_key == 'connections-channels' else 'settings')) }}</span></header>
 {% if category == 'infrastructure' %}
 <section class="panel settings-section">
   <table><thead><tr><th>{{ tr('Runtime component') }}</th><th>{{ tr('Current effective value') }}</th><th>{{ tr('Where to change it') }}</th></tr></thead><tbody>{% for name,value,source in infrastructure %}<tr><td><strong>{{ name }}</strong></td><td><code>{{ value }}</code></td><td><span class="apply-badge external">{{ source }}</span></td></tr>{% else %}<tr><td colspan="3">{{ tr('Runtime details are unavailable. Check the application deployment configuration.') }}</td></tr>{% endfor %}</tbody></table>

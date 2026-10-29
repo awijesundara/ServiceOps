@@ -65,9 +65,6 @@
    "id": "({cis_matched_by_serial} matched to existing items by serial number)"
   },
   {
-   "id": ") blocks externally-hosted images, and there's no file upload/storage for one built yet."
-  },
-  {
    "id": "+ Add a work item"
   },
   {
@@ -192,9 +189,6 @@
   },
   {
    "id": "A link type needs a name and its outward and inward descriptions."
-  },
-  {
-   "id": "A logo image isn't supported yet -- this app's Content Security Policy ("
   },
   {
    "id": "A macro with that name already exists."
@@ -1146,6 +1140,9 @@
   },
   {
    "id": "All other equipment has a valid U position."
+  },
+  {
+   "id": "All permissions for {ci_class}"
   },
   {
    "id": "All plans"
@@ -3734,6 +3731,9 @@
    "id": "Create page"
   },
   {
+   "id": "Create permissions for {role}"
+  },
+  {
    "id": "Create plan"
   },
   {
@@ -3807,6 +3807,9 @@
   },
   {
    "id": "Create work item · {key} · {instance_name}"
+  },
+  {
+   "id": "Create {ci_class} for {role}"
   },
   {
    "id": "Create {kind}"
@@ -4226,6 +4229,9 @@
    "id": "Delete level"
   },
   {
+   "id": "Delete permissions for {role}"
+  },
+  {
    "id": "Delete planned sprint"
   },
   {
@@ -4284,6 +4290,9 @@
   },
   {
    "id": "Delete view"
+  },
+  {
+   "id": "Delete {ci_class} for {role}"
   },
   {
    "id": "Delete {key}? This cannot be undone."
@@ -5226,6 +5235,9 @@
   },
   {
    "id": "Exclude date"
+  },
+  {
+   "id": "Execution mode"
   },
   {
    "id": "Executive"
@@ -10900,6 +10912,9 @@
    "id": "Read pages, forms, shortcuts or reports"
   },
   {
+   "id": "Read permissions for {role}"
+  },
+  {
    "id": "Read plan hierarchy, teams, capacity and allocations"
   },
   {
@@ -10910,6 +10925,9 @@
   },
   {
    "id": "Read this incident and its recent comments."
+  },
+  {
+   "id": "Read {ci_class} for {role}"
   },
   {
    "id": "Read-only plan. Its owner or a tenant administrator with project edit access can change it."
@@ -11720,6 +11738,9 @@
   },
   {
    "id": "Retention and external evidence"
+  },
+  {
+   "id": "Retention days for {record_type}"
   },
   {
    "id": "Retention must be an integer number of days."
@@ -13793,6 +13814,9 @@
    "id": "State"
   },
   {
+   "id": "State for {number}"
+  },
+  {
    "id": "Status",
    "javascript": true
   },
@@ -14401,6 +14425,9 @@
   },
   {
    "id": "The SysOps client-support team is not configured."
+  },
+  {
+   "id": "The accent colour marks this organization on its tickets."
   },
   {
    "id": "The acting user cannot comment on this ticket."
@@ -15595,6 +15622,9 @@
    "id": "Update incident"
   },
   {
+   "id": "Update permissions for {role}"
+  },
+  {
    "id": "Update record"
   },
   {
@@ -15620,6 +15650,9 @@
   },
   {
    "id": "Update view"
+  },
+  {
+   "id": "Update {ci_class} for {role}"
   },
   {
    "id": "Update {number}"
@@ -16701,6 +16734,9 @@
   },
   {
    "id": "Your password is managed by your organization's login provider, not ServiceOps."
+  },
+  {
+   "id": "Your post-implementation review was saved."
   },
   {
    "id": "Your projects"

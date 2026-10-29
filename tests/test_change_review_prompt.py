@@ -69,3 +69,20 @@ def test_the_record_update_button_saves_a_review_typed_in_the_review_form(client
     with app.app_context():
         review = ChangePostImplementationReview.query.filter_by(ticket_id=ticket_id).one()
         assert review.summary == "Typed below, saved with Update."
+
+
+def test_a_refused_update_still_keeps_the_typed_review(client, app):
+    ticket_id = _resolved_change(app, "CHG0009805")
+    with app.app_context():
+        db.session.get(Ticket, ticket_id).state = "Review"
+        ApprovalChain.query.filter_by(target_id=ticket_id).delete()
+        db.session.commit()
+    login(client)
+    page = client.post(f"/ticket/{ticket_id}", data={
+        "action": "update", "state": "Closed", "impact": "Medium", "urgency": "Medium", "priority": "P3",
+        "pir_outcome": "Successful", "pir_summary": "Kept although the close was refused."},
+        follow_redirects=True).data.decode()
+    with app.app_context():
+        assert db.session.get(Ticket, ticket_id).state == "Review"
+        assert ChangePostImplementationReview.query.filter_by(ticket_id=ticket_id).one().summary.startswith("Kept")
+    assert "Your post-implementation review was saved." in page

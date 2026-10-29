@@ -13,14 +13,14 @@
     <table class="ci-permissions-table">
       <thead><tr>
         <th rowspan="2">{{ tr('CI class') }}</th>
-        {% for role in roles %}<th colspan="{{ 4 if role in crud_roles else 1 }}">{{ tr_value(role|capitalize) }}</th>{% endfor %}
+        {% for role in roles %}<th {% if role in crud_roles %}colspan="4"{% else %}rowspan="2"{% endif %}>{{ tr_value(role|capitalize) }}</th>{% endfor %}
       </tr><tr>
-        {% for role in roles %}
-          <th><label class="muted"><input type="checkbox" data-col-toggle="read__{{ role }}"> {{ tr('Read') }}</label></th>
+        {% for role in roles if role in crud_roles %}
+          <th><label class="muted"><input type="checkbox" data-col-toggle="read__{{ role }}" aria-label="{{ tr('Read permissions for {role}', role=tr_value(role|capitalize)) }}"> {{ tr('Read') }}</label></th>
           {% if role in crud_roles %}
-          <th><label class="muted"><input type="checkbox" data-col-toggle="create__{{ role }}"> {{ tr('Create') }}</label></th>
-          <th><label class="muted"><input type="checkbox" data-col-toggle="update__{{ role }}"> {{ tr('Update') }}</label></th>
-          <th><label class="muted"><input type="checkbox" data-col-toggle="delete__{{ role }}"> {{ tr('Delete') }}</label></th>
+          <th><label class="muted"><input type="checkbox" data-col-toggle="create__{{ role }}" aria-label="{{ tr('Create permissions for {role}', role=tr_value(role|capitalize)) }}"> {{ tr('Create') }}</label></th>
+          <th><label class="muted"><input type="checkbox" data-col-toggle="update__{{ role }}" aria-label="{{ tr('Update permissions for {role}', role=tr_value(role|capitalize)) }}"> {{ tr('Update') }}</label></th>
+          <th><label class="muted"><input type="checkbox" data-col-toggle="delete__{{ role }}" aria-label="{{ tr('Delete permissions for {role}', role=tr_value(role|capitalize)) }}"> {{ tr('Delete') }}</label></th>
           {% endif %}
         {% endfor %}
       </tr></thead>
@@ -28,17 +28,16 @@
         {% for ci_class in ci_classes %}
         <tr>
           <td><input type="hidden" name="ci_class" value="{{ ci_class }}">{{ ci_class }}{% if ci_class not in managed_classes %} <span class="badge">{{ tr('Unmanaged — visible to everyone') }}</span>{% endif %}
-            <label class="muted"><input type="checkbox" data-row-toggle="{{ ci_class }}"> {{ tr('All') }}</label>
+            <label class="muted"><input type="checkbox" data-row-toggle="{{ ci_class }}" aria-label="{{ tr('All permissions for {ci_class}', ci_class=ci_class) }}"> {{ tr('All') }}</label>
           </td>
           {% for role in roles %}
             {% set cell = grants.get((ci_class, role), {}) %}
-            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="read__{{ role }}" name="read__{{ ci_class }}__{{ role }}" {% if cell.read %}checked{% endif %}></td>
             {% if role in crud_roles %}
-            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="create__{{ role }}" name="create__{{ ci_class }}__{{ role }}" {% if cell.create %}checked{% endif %}></td>
-            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="update__{{ role }}" name="update__{{ ci_class }}__{{ role }}" {% if cell.update %}checked{% endif %}></td>
-            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="delete__{{ role }}" name="delete__{{ ci_class }}__{{ role }}" {% if cell.delete %}checked{% endif %}></td>
-            {% else %}
-            <td colspan="3"><span class="muted">{{ tr('Always allowed') }}</span></td>
+            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="read__{{ role }}" name="read__{{ ci_class }}__{{ role }}" aria-label="{{ tr('Read {ci_class} for {role}', ci_class=ci_class, role=tr_value(role|capitalize)) }}" {% if cell.get('read', false) %}checked{% endif %}></td>
+            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="create__{{ role }}" name="create__{{ ci_class }}__{{ role }}" aria-label="{{ tr('Create {ci_class} for {role}', ci_class=ci_class, role=tr_value(role|capitalize)) }}" {% if cell.get('create', false) %}checked{% endif %}></td>
+            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="update__{{ role }}" name="update__{{ ci_class }}__{{ role }}" aria-label="{{ tr('Update {ci_class} for {role}', ci_class=ci_class, role=tr_value(role|capitalize)) }}" {% if cell.get('update', false) %}checked{% endif %}></td>
+            <td><input type="checkbox" class="ci-perm-cell" data-row="{{ ci_class }}" data-col="delete__{{ role }}" name="delete__{{ ci_class }}__{{ role }}" aria-label="{{ tr('Delete {ci_class} for {role}', ci_class=ci_class, role=tr_value(role|capitalize)) }}" {% if cell.get('delete', false) %}checked{% endif %}></td>
+            {% else %}<td>{{ tr('Always allowed') }}</td>
             {% endif %}
           {% endfor %}
         </tr>

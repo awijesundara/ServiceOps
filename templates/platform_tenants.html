@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}{{ tr('Platform tenants · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
-{% set admin_page_title = tr("Platform tenants") %}{% set admin_parent_title = tr("Administration home") %}{% set admin_parent_url = url_for('admin_home') %}{% include '_admin_context.html' %}
+{% set admin_page_title = tr("Platform tenants") %}{% set admin_parent_title = none %}{% set admin_parent_url = none %}{% include '_admin_context.html' %}
 <header class="page-head"><div><p class="eyebrow">{{ tr('PLATFORM') }}</p><h1>{{ tr('Tenants') }}</h1><p>{{ tr('Cross-tenant control, visible only to superadmin accounts. Every other admin screen is scoped to your own tenant.') }}</p></div></header>
 <section class="panel">
   <div class="panel-head"><div><h2>{{ tr('Create tenant') }}</h2></div></div>

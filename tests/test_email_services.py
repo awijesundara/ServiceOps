@@ -281,3 +281,31 @@ def test_a_tenant_admin_without_platform_authority_does_not_import(client, app):
     client.get("/admin/email")
     with app.app_context():
         assert MailService.query.count() == 0
+
+
+def test_without_a_company_logo_every_email_carries_the_serviceops_mark(app, tmp_path, monkeypatch):
+    from serviceops_core.email_render import render_email
+    monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+    with app.app_context(), app.test_request_context("/"):
+        message = outgoing()
+        render_email(message, title="T", body="B")
+    parsed = email.message_from_bytes(message.as_bytes(), policy=email.policy.default)
+    image = next(part for part in parsed.walk() if part.get_content_type() == "image/png")
+    html = next(part for part in parsed.walk() if part.get_content_type() == "text/html").get_content()
+    with open(f"{app.static_folder}/brand/serviceops-mark.png", "rb") as handle:
+        assert image.get_content() == handle.read()
+    assert f'cid:{image["Content-ID"].strip("<>")}' in html
+
+
+def test_a_service_without_reply_to_drops_a_leftover_one(app, monkeypatch):
+    sent = []
+    monkeypatch.setattr(mail, "send_pickup_directory", lambda message: sent.append(message))
+    with app.app_context():
+        message = outgoing()
+        message["Reply-To"] = "old-platform@example.test"
+        token = mail._service_settings.set({"MAIL_TRANSPORT": "pickup_directory", "SMTP_FROM": "desk@example.test"})
+        try:
+            mail._transmit(message)
+        finally:
+            mail._service_settings.reset(token)
+    assert sent[0]["Reply-To"] is None
