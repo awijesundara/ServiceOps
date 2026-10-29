@@ -344,3 +344,20 @@ def test_unknown_transport_and_missing_recipient_fail_cleanly(app):
         with pytest.raises(mail.MailError) as error:
             mail.send(message(to=""))
         assert "recipient" in str(error.value)
+
+
+def test_internal_relay_sends_plain_smtp_on_port_25_without_sign_in(app, fake_smtp):
+    config, errors = mail.validate_service("smtp_relay", None, {
+        "SMTP_HOST": "mailrelay.corp.example.test", "SMTP_FROM": "serviceops@corp.example.test"})
+    assert not errors
+    with app.app_context():
+        token = mail._service_settings.set(mail.service_settings("smtp_relay", config))
+        try:
+            mail._transmit(message("person@corp.example.test"))
+        finally:
+            mail._service_settings.reset(token)
+    smtp = fake_smtp.instances[0]
+    assert (smtp.host, smtp.port) == ("mailrelay.corp.example.test", 25)
+    assert smtp.commands == ["ehlo"], "no STARTTLS and no sign-in"
+    assert smtp.sent[0]["From"].addresses[0].addr_spec == "serviceops@corp.example.test"
+    assert "mailrelay.corp.example.test" in mail.describe_service("smtp_relay", config)

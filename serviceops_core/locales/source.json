@@ -136,6 +136,9 @@
    "id": "A comment between 1 and 10000 characters is required."
   },
   {
+   "id": "A company mail relay that accepts mail from this server's IP address, with no sign-in (port 25)."
+  },
+  {
    "id": "A completed sprint cannot be edited."
   },
   {
@@ -6435,6 +6438,9 @@
   },
   {
    "id": "Interfaces"
+  },
+  {
+   "id": "Internal SMTP relay"
   },
   {
    "id": "Internal Server Error"

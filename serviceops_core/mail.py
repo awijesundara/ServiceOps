@@ -822,6 +822,21 @@ PROVIDERS = {
             _f("SMTP_TLS_INSECURE", "Skip certificate verification (insecure, last resort)", "bool"),
         ],
     },
+    "smtp_relay": {
+        "label": "Internal SMTP relay", "icon": "RLY",
+        "summary": "A company mail relay that accepts mail from this server's IP address, with no sign-in (port 25).",
+        "transport": "smtp", "fixed": {"SMTP_PROVIDER": "generic", "SMTP_AUTH_MODE": "none"},
+        "fields": [
+            _f("SMTP_HOST", "Relay server", required=True, placeholder="mailrelay.corp.example.com",
+               help="Host name or IP address. This server's outgoing IP address must be allowed on the relay."),
+            _f("SMTP_PORT", "Port", "int", default="25"),
+            _f("SMTP_SECURITY", "Encryption", "choice", default="none",
+               choices={"none": "None (plain SMTP on the internal network)", "starttls": "STARTTLS (the relay must support it)"}),
+            _f("SMTP_LOCAL_HOSTNAME", "EHLO name", help="Optional. Some relays only accept a known host name."),
+            _f("SMTP_CA_CERT", "Trusted CA certificate", "textarea",
+               help="Optional, with STARTTLS. PEM of the CA that issued the relay's certificate."),
+        ],
+    },
     "sendmail": {
         "label": "Local sendmail", "icon": "MTA", "summary": "A mail program on this server: Postfix, Exim or msmtp.",
         "transport": "sendmail",
