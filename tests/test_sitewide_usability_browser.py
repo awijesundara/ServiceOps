@@ -235,6 +235,9 @@ def test_all_reachable_pages(server):
             page.wait_for_url(base + "/")
             page.wait_for_load_state("load")
             for route in routes:
+                failed_requests = []
+                response_listener = lambda response: failed_requests.append({"url": response.url, "status": response.status}) if response.status >= 500 and response.url.startswith(base) else None
+                page.on("response", response_listener)
                 errors = []
                 listener = lambda error: errors.append(str(error))
                 page.on("pageerror", listener)
@@ -244,15 +247,16 @@ def test_all_reachable_pages(server):
                   clipped:[...document.querySelectorAll('main form')].filter(e=>e.checkVisibility()&&getComputedStyle(e).overflowY==='hidden'&&e.scrollHeight>e.clientHeight+1).map(e=>e.className)})""")
                 violations = _axe(page)
                 result = {"route": route, "width": width, "theme": theme, "status": response.status,
-                          "geometry": geometry, "axe": violations, "errors": errors}
+                          "geometry": geometry, "axe": violations, "errors": errors, "failed_requests": failed_requests}
                 results.append(result)
-                failed = response.status >= 400 or geometry["overflow"] > 1 or geometry["clipped"] or violations or errors
+                failed = response.status >= 400 or geometry["overflow"] > 1 or geometry["clipped"] or violations or errors or failed_requests
                 if failed:
                     failures.append(result)
                 if failed or os.getenv("SITEWIDE_SCREENSHOT_ALL") == "1":
                     slug = re.sub(r"[^a-zA-Z0-9_-]", "-", route)[:150]
                     page.screenshot(path=str(output / f"{width}-{theme}-{slug}.png"), full_page=True)
                 page.remove_listener("pageerror", listener)
+                page.remove_listener("response", response_listener)
                 (output / "browser-audit.json").write_text(json.dumps(results, indent=2))
             page.close()
         browser.close()

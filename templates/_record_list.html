@@ -1,0 +1,23 @@
+{# Shared list presentation. Callers retain record queries, permissions and actions. #}
+{% from '_admin_icons.html' import admin_icon %}
+{% macro filter_button(label=none) -%}<button type="button" class="list-filter-toggle ticket-filter-menu" data-list-filter-toggle aria-label="{{ label or tr('Filters') }}" title="{{ tr('Filters') }}" aria-expanded="false">{{ admin_icon('filter', 'toolbar-icon') }}<span>{{ tr('Filter') }}</span></button>{%- endmacro %}
+{% macro advanced_filter(form_id, fields, value='', label=none) -%}
+<div class="list-filter record-list-filter no-print" data-filter-form="{{ form_id }}" data-filter-fields='{{ fields|tojson }}' data-filter-value='{{ value or "[]" }}'>
+  {{ filter_button(label) }}
+  <div class="list-filter-builder" hidden><div class="list-filter-rows"></div><div class="list-filter-actions">
+    <button type="button" class="list-filter-add">+ {{ tr('Add condition') }}</button><button type="submit" class="primary" form="{{ form_id }}">{{ tr('Run') }}</button><button type="button" class="list-filter-clear">{{ tr('Clear filter') }}</button>
+  </div></div>
+</div>
+{%- endmacro %}
+{% macro native_filter(form_id, query='') -%}
+<div class="list-filter record-list-filter no-print" data-native-list-filter data-filter-form="{{ form_id }}">
+  {{ filter_button() }}
+  <div class="list-filter-builder" hidden>
+    <label class="record-native-field">{{ tr('Search') }}<input type="search" data-list-query value="{{ query }}" form="{{ form_id }}"></label>
+    {% if caller is defined %}{{ caller() }}{% endif %}
+    <div class="list-filter-actions"><button type="submit" class="primary" form="{{ form_id }}">{{ tr('Run') }}</button><button type="button" class="list-filter-clear" data-list-filter-clear>{{ tr('Clear filter') }}</button></div>
+  </div>
+</div>
+{%- endmacro %}
+{% macro all_records(url, query='') -%}<div class="list-breadcrumb"><a class="ticket-all-link" data-list-all href="{{ url }}">{{ admin_icon('filter', 'toolbar-icon') }}{{ tr('All') }}</a>{% if query %}<span> › {{ tr('Search contains “{q}”', q=query) }}</span>{% endif %}</div>{%- endmacro %}
+{% macro print_button() -%}<button type="button" class="button" data-print-page>{{ admin_icon('printer', 'toolbar-icon') }} {{ tr('Print') }}</button>{%- endmacro %}

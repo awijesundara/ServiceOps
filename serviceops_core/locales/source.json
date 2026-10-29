@@ -9399,6 +9399,9 @@
    "id": "Open this first"
   },
   {
+   "id": "Open ticket filters"
+  },
+  {
    "id": "Open ticket list"
   },
   {
@@ -9493,7 +9496,8 @@
    "id": "Operations"
   },
   {
-   "id": "Operator"
+   "id": "Operator",
+   "javascript": true
   },
   {
    "id": "Optional"
@@ -13354,9 +13358,6 @@
   {
    "id": "Show ServiceOps notifications on this computer even when no ServiceOps tab is open.",
    "javascript": true
-  },
-  {
-   "id": "Show all requests"
   },
   {
    "id": "Show archived"

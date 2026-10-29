@@ -27,12 +27,12 @@ MINIMUM_BYTES = 1024
 LEVEL = 6
 _STATIC_CACHE = OrderedDict()
 _STATIC_CACHE_LIMIT = 256
+_STATIC_CACHE_MAX_BYTES = 8 * 1024 * 1024
 _STATIC_CACHE_LOCK = threading.Lock()  # gunicorn serves several threads per worker
 
 
 def _accepts_gzip():
-    return any(part.split(";")[0].strip() == "gzip"
-               for part in request.headers.get("Accept-Encoding", "").lower().split(","))
+    return request.accept_encodings["gzip"] > 0
 
 
 def compress_response(response):
@@ -45,13 +45,16 @@ def compress_response(response):
         or (response.direct_passthrough and request.endpoint != "static")
         or "Content-Encoding" in response.headers
         or response.mimetype not in COMPRESSIBLE
-        or not _accepts_gzip()
     ):
         return response
     response.vary.add("Accept-Encoding")
+    if not _accepts_gzip():
+        return response
     static_key = None
-    if request.endpoint == "static" and request.args.get("v"):
-        static_key = request.full_path
+    if request.endpoint == "static" and response.status_code == 200 and response.headers.get("ETag"):
+        # Query strings are caller-controlled; only the actual asset and its
+        # validator identify immutable bytes. Bound both cache count and size.
+        static_key = (request.path, response.headers["ETag"])
         with _STATIC_CACHE_LOCK:
             cached = _STATIC_CACHE.get(static_key)
             if cached is not None:
@@ -68,10 +71,11 @@ def compress_response(response):
     compressed = gzip.compress(body, compresslevel=LEVEL, mtime=0)
     if len(compressed) >= len(body):
         return response
-    if static_key is not None:
+    if static_key is not None and len(compressed) <= _STATIC_CACHE_MAX_BYTES:
         with _STATIC_CACHE_LOCK:
             _STATIC_CACHE[static_key] = compressed
-            while len(_STATIC_CACHE) > _STATIC_CACHE_LIMIT:
+            while (len(_STATIC_CACHE) > _STATIC_CACHE_LIMIT
+                   or sum(map(len, _STATIC_CACHE.values())) > _STATIC_CACHE_MAX_BYTES):
                 _STATIC_CACHE.popitem(last=False)
     return _apply(response, compressed)
 
@@ -86,4 +90,6 @@ def _apply(response, compressed):
         etag, weak = response.get_etag()
         if etag and not etag.endswith("-gzip"):
             response.set_etag(f"{etag}-gzip", weak=weak)
+    if request.endpoint == "static":
+        response.make_conditional(request)
     return response

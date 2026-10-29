@@ -35,6 +35,8 @@ def test_versioned_static_assets_are_compressed_once_and_revalidated_separately(
     assert gzip.decompress(first.get_data()) == raw.get_data()
     assert first.headers["Cache-Control"] == "public, max-age=31536000, immutable"
     assert first.headers.get("ETag", "").endswith('-gzip"') and raw.headers.get("ETag") != first.headers.get("ETag")
+    conditional = client.get(css, headers={**GZIP, "If-None-Match": first.headers["ETag"]})
+    assert conditional.status_code == 304 and conditional.get_data() == b""
     assert "Content-Encoding" not in raw.headers
     # HEAD and tiny responses stay as they are.
     assert "Content-Encoding" not in client.head(css, headers=GZIP).headers

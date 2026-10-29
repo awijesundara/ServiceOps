@@ -1,11 +1,13 @@
+{% from '_record_list.html' import native_filter, all_records, print_button %}
 {% extends "base.html" %}{% from "_status_badge.html" import status_badge %}
 {% block title %}{{ tr('My tasks · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}<span hidden data-live-watch="tickets"></span>
 <header class="page-head"><div><p class="eyebrow">{{ tr('WORK QUEUE') }}</p><h1>{{ tr('My tasks') }}</h1><p>{{ tr('Incident, change, problem, event and catalog tasks assigned to you or your teams.') }}</p></div></header>
 
-<section class="panel table-panel">
-<h2>{% if person %}{{ tr('Open tasks assigned to {name}', name=person.name) }}{% else %}{{ tr('Assigned to me') }}{% endif %}</h2>
-<table>
+<section class="list-workspace">
+<header class="list-toolbar"><div class="list-title">{{ native_filter('assigned-tasks-search', q) }}<div><strong>{% if person %}{{ tr('Open tasks assigned to {name}', name=person.name) }}{% else %}{{ tr('Assigned to me') }}{% endif %}</strong><small>{{ trn(assigned_to_me|length, '{count} record', '{count} records') }}</small></div></div>{{ print_button() }}<form class="list-search" id="assigned-tasks-search">{% if person %}<input type="hidden" name="assignee" value="{{ person.id }}">{% endif %}<input name="q" value="{{ q }}" aria-label="{{ tr('Search') }}" placeholder="{{ tr('Search') }}"><button>{{ tr('Search') }}</button></form></header>{{ all_records(url_for('my_work_tasks', assignee=person.id if person else none), q) }}
+
+<div class="task-list-scroll"><table class="task-list record-list-table">
   <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Team') }}</th><th>{{ tr('Due') }}</th></tr></thead>
   <tbody>
     {% for row in assigned_to_me %}
@@ -21,12 +23,12 @@
     <tr><td colspan="6" class="empty">{% if person %}{{ tr('Nothing assigned to {name} right now.', name=person.name) }}{% else %}{{ tr('Nothing assigned to you right now.') }}{% endif %}</td></tr>
     {% endfor %}
   </tbody>
-</table>
+</table></div>
 </section>
 
-{% if not person %}<section class="panel table-panel">
-<h2>{{ tr("My teams' open tasks") }}</h2>
-<table>
+{% if not person %}<section class="list-workspace">
+<header class="list-toolbar"><div class="list-title">{{ native_filter('team-tasks-search', q) }}<div><strong>{{ tr("My teams' open tasks") }}</strong><small>{{ trn(team_tasks|length, '{count} record', '{count} records') }}</small></div></div>{{ print_button() }}<form class="list-search" id="team-tasks-search"><input name="q" value="{{ q }}" aria-label="{{ tr('Search') }}" placeholder="{{ tr('Search') }}"><button>{{ tr('Search') }}</button></form></header>{{ all_records(url_for('my_work_tasks'), q) }}
+<div class="task-list-scroll"><table class="task-list record-list-table">
   <thead><tr><th>{{ tr('Number') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Summary') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Team') }}</th><th>{{ tr('Assigned to') }}</th><th>{{ tr('Due') }}</th></tr></thead>
   <tbody>
     {% for row in team_tasks %}
@@ -43,6 +45,6 @@
     <tr><td colspan="7" class="empty">{{ tr('No open tasks for your teams.') }}</td></tr>
     {% endfor %}
   </tbody>
-</table>
+</table></div>
 </section>{% endif %}
 {% endblock %}

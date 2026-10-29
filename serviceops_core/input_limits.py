@@ -6,6 +6,8 @@ happened to save the value. `reject_nul_characters` runs before every request
 and `_check_lengths` runs before every flush made while serving a request
 (background jobs keep their own handling).
 """
+from itertools import chain
+
 from flask import abort, has_request_context, request
 from sqlalchemy import String, event, inspect
 from sqlalchemy.orm import Session
@@ -13,34 +15,41 @@ from werkzeug.exceptions import BadRequest
 
 from serviceops_core.localization import tr
 
-_MAX_JSON_SCAN = 2_000_000
-
-
 class ValueTooLong(BadRequest):
     pass
 
 
-def _has_nul(value, depth=0):
-    if isinstance(value, str):
-        return "\x00" in value
-    if depth > 20:
-        return False
-    if isinstance(value, dict):
-        return any(_has_nul(k, depth + 1) or _has_nul(v, depth + 1) for k, v in value.items())
-    if isinstance(value, list):
-        return any(_has_nul(item, depth + 1) for item in value)
+def _has_nul(value):
+    # Iterator frames keep memory proportional to depth, even for large arrays.
+    frames = [iter((value,))]
+    while frames:
+        try:
+            item = next(frames[-1])
+        except StopIteration:
+            frames.pop()
+            continue
+        if isinstance(item, str) and "\x00" in item:
+            return True
+        if isinstance(item, (dict, list)):
+            if len(frames) > 100:
+                raise BadRequest(description="The JSON request is nested too deeply.")
+            frames.append(iter(chain(item.keys(), item.values())) if isinstance(item, dict) else iter(item))
     return False
 
 
 def reject_nul_characters():
     """before_request hook: a NUL character is never valid text input."""
-    values = list(request.args.values()) + list(request.args.keys())
+    values = [value for _, value in request.args.items(multi=True)] + list(request.args.keys())
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         if request.mimetype in ("application/x-www-form-urlencoded", "multipart/form-data"):
-            values += list(request.form.values()) + list(request.form.keys())
-            values += [f.filename or "" for f in request.files.values()]
-        elif request.is_json and (request.content_length or 0) <= _MAX_JSON_SCAN:
-            values.append(request.get_json(silent=True))
+            values += [value for _, value in request.form.items(multi=True)] + list(request.form.keys())
+            values += [f.filename or "" for _, f in request.files.items(multi=True)]
+        elif request.is_json:
+            try:
+                # Syntax errors belong to the endpoint protocol (for example JSON-RPC).
+                values.append(request.get_json(silent=True))
+            except RecursionError:
+                abort(400, description="The JSON request is nested too deeply.")
     if any(_has_nul(value) for value in values):
         abort(400, description=tr("The request contains a character that is not allowed (NUL)."))
 

@@ -27,6 +27,11 @@
           "id", "number", "type", "title", "description", "state", "priority",
           "category", "subcategory", "closure_category", "closure_subcategory",
           "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items", "caller", "opened_by", "hold_reason", "parent_incident", "reassignment_count", "reopen_count"
+        ],
+        "superadmin": [
+          "id", "number", "type", "title", "description", "state", "priority",
+          "category", "subcategory", "closure_category", "closure_subcategory",
+          "resolution_notes", "opened_at", "updated_at", "resolved_at", "attachments", "internal", "details", "configuration_items", "caller", "opened_by", "hold_reason", "parent_incident", "reassignment_count", "reopen_count"
         ]
       }
     },
@@ -41,6 +46,11 @@
           "id", "event_id", "request_id", "user_id", "action", "target",
           "details", "source_ip", "user_agent", "integrity_version",
           "integrity_key_id", "previous_hash", "event_hash", "created_at"
+        ],
+        "superadmin": [
+          "id", "event_id", "request_id", "user_id", "action", "target",
+          "details", "source_ip", "user_agent", "integrity_version",
+          "integrity_key_id", "previous_hash", "event_hash", "created_at"
         ]
       }
     },
@@ -50,7 +60,8 @@
         "requester": ["type", "label", "url", "meta"],
         "agent": ["type", "label", "url", "meta"],
         "manager": ["type", "label", "url", "meta"],
-        "admin": ["type", "label", "url", "meta"]
+        "admin": ["type", "label", "url", "meta"],
+        "superadmin": ["type", "label", "url", "meta"]
       }
     },
     "monitoring_ack": {
@@ -70,7 +81,8 @@
       "audiences": {
         "agent": ["event_id", "state", "ticket"],
         "manager": ["event_id", "state", "ticket"],
-        "admin": ["event_id", "state", "ticket"]
+        "admin": ["event_id", "state", "ticket"],
+        "superadmin": ["event_id", "state", "ticket"]
       }
     },
     "ui_action_ack": {
@@ -79,7 +91,8 @@
         "requester": ["active", "state", "url", "label"],
         "agent": ["active", "state", "url", "label"],
         "manager": ["active", "state", "url", "label"],
-        "admin": ["active", "state", "url", "label"]
+        "admin": ["active", "state", "url", "label"],
+        "superadmin": ["active", "state", "url", "label"]
       }
     }
   }

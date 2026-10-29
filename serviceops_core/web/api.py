@@ -1018,9 +1018,11 @@ def register(app):
         if not authorization.startswith("Bearer "):
             abort(401, description=tr("A monitoring bearer token is required."))
         token = authorization[7:].strip()
+        # Serialize duplicate checks and writes across workers for this source.
+        # The unique constraint alone rejects a concurrent retry with a 500.
         source = MonitoringSource.query.filter_by(
             source_id=source_id, active=True
-        ).first()
+        ).with_for_update().first()
         token_hash = api_token_hash(token) if token else ""
         if (
             not source or not token_hash
@@ -1064,7 +1066,7 @@ def register(app):
         record = EnterpriseRecord(
             number=next_enterprise_number("event"),
             domain="event", record_type="Infrastructure event",
-            title=summary, description=json.dumps(body, indent=2, sort_keys=True),
+            title=summary[:180], description=json.dumps(body, indent=2, sort_keys=True),
             state="New", priority=priority, risk=severity.title(),
             requester_id=source.created_by_id,
             metadata_json=json.dumps({
@@ -1087,7 +1089,7 @@ def register(app):
             task = OperationalTask(
                 number=next_operational_task_number("event"),
                 task_kind="event", parent_type="enterprise", parent_id=record.id,
-                title=f"Investigate {resource}", task_type="Investigation",
+                title=f"Investigate {resource}"[:180], task_type="Investigation",
                 assignment_group_id=source.assignment_group_id, required=True,
             )
             db.session.add(task)

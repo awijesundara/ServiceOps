@@ -1,8 +1,9 @@
+{% from '_admin_icons.html' import admin_icon %}
 {# Reusable export controls: a CSV download and a print/PDF trigger.
    Pass csv_url for the CSV link; the print button always works via the
    browser's print dialog ("Save as PDF" is a standard print-destination
    choice, so this needs no extra PDF-rendering dependency in the app). #}
 <div class="export-toolbar no-print">
   {% if csv_url %}<a class="button" href="{{ csv_url }}">⬇ {{ tr('Export CSV') }}</a>{% endif %}
-  <button type="button" class="button" data-print-page>🖶 {{ tr('Print / Save as PDF') }}</button>
+  <button type="button" class="button" data-print-page>{{ admin_icon('printer', 'toolbar-icon') }} {{ tr('Print / Save as PDF') }}</button>
 </div>

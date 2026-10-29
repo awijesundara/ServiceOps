@@ -7857,6 +7857,10 @@ def create_app(test_config=None):
     @app.errorhandler(HTTPException)
     def http_error(error):
         rollback_failed_request()
+        # Keep protocol headers such as Allow, Retry-After and authentication
+        # challenges when replacing Werkzeug's body with our HTML/JSON.
+        headers = [(key, value) for key, value in error.get_headers()
+                   if key.lower() not in {"content-type", "content-length"}]
         if request.path.startswith("/api/"):
             return jsonify({
                 "error": {
@@ -7865,10 +7869,10 @@ def create_app(test_config=None):
                     "detail": error.description,
                     "request_id": g.get("request_id"),
                 }
-            }), error.code
+            }), error.code, headers
         return render_template(
             "error.html", code=error.code, message=error.description
-        ), error.code
+        ), error.code, headers
 
     @app.errorhandler(TenantResolutionError)
     def tenant_resolution_error(error):
