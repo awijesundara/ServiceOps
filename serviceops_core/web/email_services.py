@@ -7,7 +7,6 @@ default fails (the fallback). Services are install-wide, like the email
 platform settings they replace, so every change needs the install settings
 authority.
 """
-import re
 
 from flask import abort, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user
@@ -16,12 +15,11 @@ import app as core
 from app import audit, require_action, require_install_settings_authority, roles
 from serviceops_core.localization import tr
 from serviceops_core.mail import (
-    PROVIDERS, MailError, describe_service, legacy_service_config, provider_fields, send_with_service,
+    PROVIDERS, MailError, describe_service, legacy_service_config, looks_like_email, provider_fields, send_with_service,
     test_message, validate_service,
 )
 from serviceops_models import MailService, PlatformSetting, db, now
 
-_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
 def _service_or_404(service_id):
@@ -159,7 +157,7 @@ def register(app):
         if not allowed:
             abort(429, description=tr("Too many test emails. Try again in a minute."))
         recipient = (request.form.get("recipient") or current_user.email or "").strip()
-        if not _EMAIL.fullmatch(recipient) or len(recipient) > 254:
+        if not looks_like_email(recipient):
             flash(tr("Enter a valid email address to send the test to."), "error")
             return redirect(url_for("email_services") + f"#service-{service.id}")
         instance = core.setting_value("INSTANCE_NAME", "ServiceOps") or "ServiceOps"

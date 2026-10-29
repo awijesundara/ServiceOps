@@ -27,7 +27,6 @@ an administrator something they can act on.
 import base64
 import contextvars
 import os
-import re
 import smtplib
 import socket
 import ssl
@@ -281,13 +280,23 @@ def _http_error_detail(response):
 
 # --- SMTP -----------------------------------------------------------------
 
+def looks_like_email(value):
+    """name@domain.tld, checked without a regular expression so a long
+    hostile value cannot cause backtracking."""
+    value = str(value or "")
+    if len(value) > 254 or any(char.isspace() for char in value) or value.count("@") != 1:
+        return False
+    local, domain = value.split("@")
+    labels = domain.split(".")
+    return bool(local) and len(labels) > 1 and all(labels)
+
+
 def smtp_profile():
     """The effective SMTP connection after applying the provider preset."""
     provider = _setting("SMTP_PROVIDER", "generic") or "generic"
     host, port, security, auth_mode, username = SMTP_PROVIDERS.get(provider, SMTP_PROVIDERS["generic"])
     if host == "{ses}":
         host = f"email-smtp.{_setting('SES_REGION', '') or 'us-east-1'}.amazonaws.com"
-    core = _core()
     security = _setting("SMTP_SECURITY", "") or security or (
         "starttls" if _flag("SMTP_STARTTLS", True) else "none")
     try:
@@ -844,7 +853,7 @@ def validate_service(provider, method, submitted, existing=None):
             if not value.isdigit() or not 0 < int(value) < 65536:
                 errors.append(f"{field['label']} must be between 1 and 65535.")
                 continue
-        if kind == "email" and value and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+        if kind == "email" and value and not looks_like_email(value):
             errors.append(f"{field['label']} must be an email address.")
             continue
         if field["required"] and not value:
