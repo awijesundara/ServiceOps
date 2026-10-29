@@ -65,12 +65,18 @@ jobs:
       - name: Commit the immutable release version and sign its tag
         env:
           TAG: ${{ steps.version.outputs.tag }}
-          GH_TOKEN: ${{ github.token }}
+          # The main ruleset (pull requests, code scanning) lets only repository
+          # admins write directly, and a personal repository cannot list the
+          # workflow token there; RELEASE_TOKEN is the owner's fine-grained token
+          # (this repository, Contents: write), used for this step only.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG_SIGNING_KEY: ${{ secrets.RELEASE_TAG_SIGNING_KEY }}
         # main requires verified signatures, so the commit is created through the
         # GitHub API (which signs it). The tag is created only after that commit
         # lands, SSH-signed with the release signing key, and must show Verified.
-        run: python3 tools/release_commit.py "$TAG"
+        run: |
+          test -n "$GH_TOKEN" || { echo "::error::Set the RELEASE_TOKEN repository secret (fine-grained token, this repository, Contents: write)"; exit 1; }
+          python3 tools/release_commit.py "$TAG"
 
   supply-chain:
     needs: version
