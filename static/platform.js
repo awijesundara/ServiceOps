@@ -548,22 +548,75 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     remove.closest(".ci-attr-row")?.remove();
   });
+  const preferenceTabs = Array.from(document.querySelectorAll("[data-pref-tab]"));
+  const preferenceTablist = document.querySelector(".preferences-nav");
+  const preferenceNarrow = window.matchMedia("(max-width:900px)");
   const activatePreferenceTab = selected => {
-    document.querySelectorAll("[data-pref-tab]").forEach(item => item.classList.toggle("active", item.dataset.prefTab === selected));
+    if (!preferenceTabs.some(item => item.dataset.prefTab === selected)) selected = "general";
+    preferenceTabs.forEach(item => {
+      const active = item.dataset.prefTab === selected;
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-selected", String(active));
+      item.tabIndex = active ? 0 : -1;
+    });
     document.querySelectorAll("[data-pref-panel]").forEach(panel => {
       panel.hidden = panel.dataset.prefPanel !== selected;
     });
+    const displayForm = document.getElementById("display-preferences");
+    if (displayForm) displayForm.hidden = selected === "notifications";
+    const category = document.querySelector("[data-preference-category]");
+    if (category && selected !== "notifications") category.value = selected;
   };
-  document.querySelectorAll("[data-pref-tab]").forEach(button => {
+  preferenceTabs.forEach(button => {
     button.addEventListener("click", () => {
       const selected = button.dataset.prefTab;
       activatePreferenceTab(selected);
       history.replaceState(null, "", `#${selected}`);
     });
+    button.addEventListener("keydown", event => {
+      const nextKey = preferenceNarrow.matches ? "ArrowRight" : "ArrowDown";
+      const previousKey = preferenceNarrow.matches ? "ArrowLeft" : "ArrowUp";
+      if (![nextKey, previousKey, "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const index = preferenceTabs.indexOf(button);
+      const target = event.key === "Home" ? 0 : event.key === "End" ? preferenceTabs.length - 1
+        : (index + (event.key === nextKey ? 1 : -1) + preferenceTabs.length) % preferenceTabs.length;
+      preferenceTabs[target].click();
+      preferenceTabs[target].focus();
+    });
   });
-  const requestedPreferenceTab = location.hash.slice(1);
-  if (requestedPreferenceTab && document.querySelector(`[data-pref-tab="${CSS.escape(requestedPreferenceTab)}"]`)) {
-    activatePreferenceTab(requestedPreferenceTab);
+  if (preferenceTablist) {
+    const updateOrientation = () => preferenceTablist.setAttribute("aria-orientation", preferenceNarrow.matches ? "horizontal" : "vertical");
+    updateOrientation();
+    preferenceNarrow.addEventListener("change", updateOrientation);
+    activatePreferenceTab(location.hash.slice(1));
+    window.addEventListener("hashchange", () => activatePreferenceTab(location.hash.slice(1)));
+  }
+  document.querySelectorAll("input[type=range][data-range-output]").forEach(input => {
+    const output = document.getElementById(input.dataset.rangeOutput);
+    if (output) input.addEventListener("input", () => { output.value = `${input.value}%`; });
+  });
+  // A table that scrolls within a panel must remain reachable by keyboard,
+  // including panels that begin to overflow only at a narrower viewport.
+  const scrollPanels = Array.from(document.querySelectorAll("main section,main .panel,main .table-scroll,main .task-list-scroll"));
+  const updateScrollPanels = () => scrollPanels.forEach(panel => {
+    const style = getComputedStyle(panel);
+    const scrolls = /auto|scroll/.test(style.overflowX) && panel.scrollWidth > panel.clientWidth + 1;
+    if (scrolls && !panel.hasAttribute("tabindex")) {
+      panel.tabIndex = 0;
+      panel.dataset.scrollRegion = "";
+    } else if (!scrolls && panel.hasAttribute("data-scroll-region")) {
+      panel.removeAttribute("tabindex");
+      delete panel.dataset.scrollRegion;
+    }
+  });
+  updateScrollPanels();
+  if (scrollPanels.length && window.ResizeObserver) {
+    const scrollObserver = new ResizeObserver(updateScrollPanels);
+    scrollPanels.forEach(panel => {
+      scrollObserver.observe(panel);
+      panel.querySelectorAll("table").forEach(table => scrollObserver.observe(table));
+    });
   }
 
   // Approval chains: expand/collapse a grouped chain's earlier (superseded)

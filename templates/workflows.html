@@ -23,7 +23,7 @@
   {% if simulation is not none %}<pre>{{ simulation|tojson(indent=2) }}</pre>{% endif %}
 </details>
 <section class="panel admin-section"><h2 id="run-automation">{{ tr('Run an automation for a ticket') }}</h2><p>{{ tr('Sends a controlled manual event for the selected ticket. Only rules explicitly configured to accept manual runs can respond.') }}</p>
-  <form method="post" class="inline-form"><input type="hidden" name="action" value="manual_trigger"><select name="ticket_id" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select><button class="button">{{ tr('Run eligible automation') }}</button></form>
+  <form method="post" class="inline-form"><input type="hidden" name="action" value="manual_trigger"><select name="ticket_id" aria-label="{{ tr('Ticket') }}" required>{% for ticket in tickets %}<option value="{{ ticket.id }}">{{ ticket.number }} · {{ ticket.title }}</option>{% endfor %}</select><button class="button">{{ tr('Run eligible automation') }}</button></form>
 </section>
 <section class="panel admin-section"><h2>{{ tr('Scheduled automation') }}</h2><p>{{ tr('Recurring rule runs on an interval for a selected ticket now have their own page.') }}</p>
   <a class="button" href="{{ url_for('workflows_scheduled') }}">{{ tr('Go to scheduled automation') }} →</a>

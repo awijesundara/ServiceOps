@@ -10,6 +10,12 @@
       field.hidden = !shown;
       field.querySelectorAll("input, select, textarea").forEach(input => { input.disabled = !shown; });
     });
+    // A method with nothing to fill in (a relay that signs in by IP) shows
+    // no empty "Connection" panel.
+    form.querySelectorAll("section.panel").forEach(section => {
+      const fields = section.querySelectorAll(".email-field");
+      if (fields.length) section.hidden = [...fields].every(field => field.hidden);
+    });
     form.querySelectorAll("[data-required]").forEach(input => {
       input.required = !input.disabled;
     });

@@ -17,7 +17,7 @@
       <input type="hidden" name="action" value="update_branding">
       <label>{{ tr('Display name') }}<input name="display_name" maxlength="180" value="{{ branding.get('display_name', '') }}" placeholder="{{ tr('Defaults to the organization name') }}"></label>
       <label>{{ tr('Accent color') }}<input type="color" name="color" value="{{ branding.get('color') or '#003e4c' }}"></label>
-      <p class="muted">{{ tr("A logo image isn't supported yet -- this app's Content Security Policy (") }}<code>img-src 'self' data:</code>{{ tr(") blocks externally-hosted images, and there's no file upload/storage for one built yet.") }}</p>
+      <p class="muted">{{ tr('The accent colour marks this organization on its tickets.') }}</p>
       <button class="button">{{ tr('Save branding') }}</button>
     </form>
   </section>

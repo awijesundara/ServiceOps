@@ -1357,6 +1357,11 @@ def register(app):
                 if not ci_class:
                     continue
                 for role in CI_CLASS_PERMISSION_ROLES:
+                    # Administrator access is unconditional and displayed as
+                    # read-only. Preserve its stored row when editable grants
+                    # are saved instead of treating an absent checkbox as denial.
+                    if role not in CI_CLASS_PERMISSION_CRUD_ROLES:
+                        continue
                     can_read = request.form.get(f"read__{ci_class}__{role}") == "on"
                     can_create = (
                         request.form.get(f"create__{ci_class}__{role}") == "on"

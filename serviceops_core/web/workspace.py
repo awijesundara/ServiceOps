@@ -1310,7 +1310,7 @@ def register(app):
                 audit("update", "Notification preferences", current_user.username)
                 db.session.commit()
                 flash(tr("Notification preferences saved."), "success")
-                return redirect(url_for("preferences"))
+                return redirect(url_for("preferences") + "#notifications")
             from serviceops_core.localization import AUTOMATIC, SELECTION_ENABLED, valid_language
             language = request.form.get("language", pref.language or AUTOMATIC) if SELECTION_ENABLED else (pref.language or AUTOMATIC)
             if language != AUTOMATIC and not valid_language(language):
@@ -1334,7 +1334,9 @@ def register(app):
             audit("update", "UI preferences", current_user.username)
             db.session.commit()
             flash(tr("Display and accessibility preferences saved."), "success")
-            return redirect(url_for("preferences"))
+            category = request.form.get("preference_category", "general")
+            fragment = "#" + category if category in {"lists", "forms"} else ""
+            return redirect(url_for("preferences") + fragment)
         muted_types = set(json.loads(notification_pref.muted_event_types or "[]"))
         return render_template(
             "preferences.html", pref=pref, notification_pref=notification_pref,

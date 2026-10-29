@@ -104,9 +104,9 @@
     <tbody>
       {% for item in catalog_items %}
       <tr>
-        <td><strong>{{ item.name }}</strong><small>{{ item.description }}</small></td>
+        <td><strong>{{ item.name }}</strong><small class="cell-note">{{ item.description }}</small></td>
         <td>{{ item.category }}</td>
-        <td>{{ tr('{delivery_days} days · {value} · {value2}', delivery_days=(item.delivery_days), value=(tr('Approval required') if item.approval_required else tr('No approval')), value2=(tr('Active') if item.active else tr('Inactive'))) }}{% if item.approval_required %}<small><a href="{{ url_for('approval_policies_admin') }}#policy-{{ item.approval_policy_id or (default_catalog_policy.id if default_catalog_policy else '') }}">{{ catalog_policy_names.get(item.approval_policy_id) or (default_catalog_policy.name if default_catalog_policy else '') }}</a></small>{% endif %}</td>
+        <td>{{ tr('{delivery_days} days · {value} · {value2}', delivery_days=(item.delivery_days), value=(tr('Approval required') if item.approval_required else tr('No approval')), value2=(tr('Active') if item.active else tr('Inactive'))) }}{% if item.approval_required %}<small class="cell-note"><a href="{{ url_for('approval_policies_admin') }}#policy-{{ item.approval_policy_id or (default_catalog_policy.id if default_catalog_policy else '') }}">{{ catalog_policy_names.get(item.approval_policy_id) or (default_catalog_policy.name if default_catalog_policy else '') }}</a></small>{% endif %}</td>
         <td>{{ item.fulfillment_route.support_group.name if item.fulfillment_route and item.fulfillment_route.active else tr('Service Desk fallback') }}</td>
         <td>
           <details><summary>{{ tr('Rename / settings') }}</summary>
@@ -492,7 +492,7 @@
       <input type="hidden" name="action" value="create_ticket_subcategory">
       <input type="hidden" name="category_id" value="{{ category.id }}">
       <input name="name" maxlength="80" placeholder="{{ tr('New subcategory name') }}" required>
-      <select name="default_service_offering_id"><option value="">{{ tr('Suggests no service offering') }}</option>{% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}</select>
+      <select name="default_service_offering_id" aria-label="{{ tr('Suggests service offering') }}"><option value="">{{ tr('Suggests no service offering') }}</option>{% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}</select>
       <button class="button">{{ tr('Add subcategory') }}</button>
     </form>
   </article>
@@ -538,7 +538,7 @@
     </form>
   </details>
   <table><thead><tr><th>{{ tr('Name') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Target') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Duration') }}</th><th>{{ tr('Calendar') }}</th><th>{{ tr('Pause states') }}</th></tr></thead>
-    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}{% if sla.client_organization %} · {{ sla.client_organization.name }}{% endif %}</td><td>{{ sla.priority or tr('All') }}</td><td>{{ tr('{duration_minutes} minutes', duration_minutes=(sla.duration_minutes)) }}</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ sla.pause_states }}</td></tr>{% endfor %}</tbody>
+    <tbody>{% for sla in sla_definitions %}<tr><td><strong>{{ sla.name }}</strong></td><td><span class="badge">{{ sla.agreement_type }}</span>{% if sla.counterparty %} {{ sla.counterparty }}{% endif %}</td><td>{{ sla.target_type }}{% if sla.client_organization %} · {{ sla.client_organization.name }}{% endif %}</td><td>{{ sla.priority or tr('All') }}</td><td>{{ tr('{duration_minutes} minutes', duration_minutes=(sla.duration_minutes)) }}</td><td>{{ sla.schedule.name if sla.schedule else "24x7" }}</td><td>{{ (sla.pause_states or "").split(",")|map("trim")|reject("equalto", "")|join(", ") }}</td></tr>{% endfor %}</tbody>
   </table>
 </section>
 {% endif %}

@@ -707,3 +707,7 @@ html.theme-dark .project-global-nav>a[aria-current]:not(.primary)::after{backgro
   .project-global-nav>a{flex-shrink:0}
 }
 @media(min-width:901px) and (max-width:1199px){.project-app main{padding-top:138px}}
+
+/* Every project tab stays readable: wrap onto a second row on wide screens
+   instead of cutting the last tabs off; phones keep the swipeable row. */
+@media(min-width:900px){.project-tabs{flex-wrap:wrap;overflow-x:visible;row-gap:2px}}

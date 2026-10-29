@@ -23,7 +23,7 @@
         <label><span>{{ tr('Description') }}</span><textarea name="description" rows="3" maxlength="500">{{ group.description or '' }}</textarea></label>
         <label><span>{{ tr('Map to AD/LDAP groups') }}</span><textarea name="directory_groups" rows="4" maxlength="5000" placeholder="{{ tr('One per line: a short name such as gg_unix, or a full DN such as cn=admins,ou=groups,dc=example,dc=com') }}">{{ directory_groups }}</textarea><small class="muted">{{ tr('Directory users in any of these groups join this group when they sign in and at each directory sync. The same AD/LDAP group can also be mapped to other groups.') }}</small></label>
         {% if group.group_type == 'Client Support' %}
-        <input type="hidden" name="group_type" value="Client Support"><p><span>{{ tr('Type') }}</span> {{ tr_value('Client Support') }}</p>
+        <input type="hidden" name="group_type" value="Client Support"><label><span>{{ tr('Group type') }}</span><input value="{{ tr_value('Client Support') }}" readonly aria-readonly="true"></label>
         {% else %}
         <label><span>{{ tr('Group type') }}</span><select name="group_type">{% for kind in group_types %}<option value="{{ kind }}" {% if group.group_type == kind %}selected{% endif %}>{{ tr_value(kind) }}</option>{% endfor %}</select></label>
         {% endif %}

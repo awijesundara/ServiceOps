@@ -1,15 +1,17 @@
 {% extends "base.html" %}{% block title %}{{ tr('Preferences · {instance_name}', instance_name=(instance_name)) }}{% endblock %}
 {% block content %}
 <header class="page-head"><div><p class="eyebrow">{{ tr('PERSONALIZATION') }}</p><h1>{{ tr('System preferences') }}</h1><p>{{ tr('Appearance and accessibility preferences for your account.') }}</p></div><div class="record-actions"><a class="button" href="{{ url_for('my_sessions') }}">{{ tr('Review sessions') }}</a><a class="button" href="{{ url_for('profile') }}">{{ tr('Edit profile') }}</a></div></header>
-<form method="post" class="preferences-workspace" data-theme-workspace data-saved-theme="{{ ui_theme }}" data-themes="{{ ui_themes|join(',') }}" data-dark-themes="{{ ui_dark_themes|join(',') }}">
-  <nav class="preferences-nav" aria-label="{{ tr('Preference categories') }}">
-    <button type="button" class="active" data-pref-tab="general">{{ tr('General') }}</button>
-    <button type="button" data-pref-tab="lists">{{ tr('Lists') }}</button>
-    <button type="button" data-pref-tab="forms">{{ tr('Forms') }}</button>
-    <button type="button" data-pref-tab="notifications">{{ tr('Notifications') }}</button>
+<div class="preferences-workspace" data-theme-workspace data-saved-theme="{{ ui_theme }}" data-themes="{{ ui_themes|join(',') }}" data-dark-themes="{{ ui_dark_themes|join(',') }}">
+  <nav class="preferences-nav" role="tablist" aria-orientation="vertical" aria-label="{{ tr('Preference categories') }}">
+    <button type="button" class="active" id="pref-tab-general" role="tab" aria-controls="pref-panel-general" aria-selected="true" tabindex="0" data-pref-tab="general">{{ tr('General') }}</button>
+    <button type="button" id="pref-tab-lists" role="tab" aria-controls="pref-panel-lists" aria-selected="false" tabindex="-1" data-pref-tab="lists">{{ tr('Lists') }}</button>
+    <button type="button" id="pref-tab-forms" role="tab" aria-controls="pref-panel-forms" aria-selected="false" tabindex="-1" data-pref-tab="forms">{{ tr('Forms') }}</button>
+    <button type="button" id="pref-tab-notifications" role="tab" aria-controls="pref-panel-notifications" aria-selected="false" tabindex="-1" data-pref-tab="notifications">{{ tr('Notifications') }}</button>
   </nav>
   <div class="preferences-content">
-    <section data-pref-panel="general"><h2>{{ tr('General') }}</h2>
+    <form method="post" id="display-preferences">
+    <input type="hidden" name="preference_category" value="general" data-preference-category>
+    <section id="pref-panel-general" role="tabpanel" aria-labelledby="pref-tab-general" tabindex="0" data-pref-panel="general"><h2>{{ tr('General') }}</h2>
       {% if language_selection_enabled %}
       <label for="preferred-language">{{ tr('Language') }}<select id="preferred-language" name="language"><option value="auto"{% if pref.language == 'auto' %} selected{% endif %}>{{ tr('Automatic (browser language)') }}</option>{% for code, name in language_options %}<option value="{{ code }}" lang="{{ code }}" dir="auto"{% if pref.language == code %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
       <small class="muted">{{ tr('Translations are bundled with ServiceOps and work offline. Text without a translation appears in English, and record content stays in the language it was written in.') }}</small>
@@ -38,20 +40,24 @@
       <div class="preference-row"><div><strong>{{ tr('Keyboard shortcuts') }}</strong><small>{{ tr('Enable supported navigation shortcuts.') }}</small></div><label class="switch"><input type="checkbox" name="keyboard_shortcuts" aria-label="{{ tr('Keyboard shortcuts') }}" {% if pref.keyboard_shortcuts %}checked{% endif %}><span></span></label></div>
       <label>{{ tr('Start page') }}<select name="start_page"><option value="/">{{ tr('Dashboard') }}</option><option value="/dashboards" {% if pref.start_page=='/dashboards' %}selected{% endif %}>{{ tr('My dashboards') }}</option><option value="/task-board" {% if pref.start_page=='/task-board' %}selected{% endif %}>{{ tr('Visual task board') }}</option><option value="/modules" {% if pref.start_page=='/modules' %}selected{% endif %}>{{ tr('All workspaces') }}</option></select></label>
     </section>
-    <section data-pref-panel="lists" hidden><h2>{{ tr('Lists') }}</h2>
+    <section id="pref-panel-lists" role="tabpanel" aria-labelledby="pref-tab-lists" tabindex="0" data-pref-panel="lists" hidden><h2>{{ tr('Lists') }}</h2>
       <div class="preference-row"><div><strong>{{ tr('Compact list date and time') }}</strong><small>{{ tr('Use shorter timestamps in operational lists.') }}</small></div><label class="switch"><input type="checkbox" name="compact_dates" aria-label="{{ tr('Compact list date and time') }}" {% if pref.compact_dates %}checked{% endif %}><span></span></label></div>
       <div class="preference-row"><div><strong>{{ tr('Data visualization patterns') }}</strong><small>{{ tr('Add non-color cues to priority and status signals.') }}</small></div><label class="switch"><input type="checkbox" name="data_patterns" aria-label="{{ tr('Data visualization patterns') }}" {% if pref.data_patterns %}checked{% endif %}><span></span></label></div>
       <label>{{ tr('Date and time display') }}<select name="date_time_display"><option value="calendar" {% if pref.date_time_display=='calendar' %}selected{% endif %}>{{ tr('Calendar date') }}</option><option value="relative" {% if pref.date_time_display=='relative' %}selected{% endif %}>{{ tr('Time ago') }}</option><option value="both" {% if pref.date_time_display=='both' %}selected{% endif %}>{{ tr('Both') }}</option></select></label>
     </section>
-    <section data-pref-panel="forms" hidden><h2>{{ tr('Forms') }}</h2><label>{{ tr('Density') }}<select name="density"><option value="comfortable" {% if pref.density=='comfortable' %}selected{% endif %}>{{ tr('Comfortable') }}</option><option value="compact" {% if pref.density=='compact' %}selected{% endif %}>{{ tr('Compact') }}</option></select></label><label>{{ tr('Font size') }}<input type="range" name="font_scale" min="80" max="140" value="{{ pref.font_scale }}"><small>{{ pref.font_scale }}%</small></label><div class="preference-row"><div><strong>{{ tr('Keep navigation pinned') }}</strong></div><label class="switch"><input type="checkbox" name="nav_pinned" aria-label="{{ tr('Keep navigation pinned') }}" {% if pref.nav_pinned %}checked{% endif %}><span></span></label></div></section>
-    <section id="notifications" data-pref-panel="notifications" hidden><h2>{{ tr('My notifications') }}</h2>
+    <section id="pref-panel-forms" role="tabpanel" aria-labelledby="pref-tab-forms" tabindex="0" data-pref-panel="forms" hidden><h2>{{ tr('Forms') }}</h2><label>{{ tr('Density') }}<select name="density"><option value="comfortable" {% if pref.density=='comfortable' %}selected{% endif %}>{{ tr('Comfortable') }}</option><option value="compact" {% if pref.density=='compact' %}selected{% endif %}>{{ tr('Compact') }}</option></select></label><label>{{ tr('Font size') }}<input id="preference-font-scale" type="range" name="font_scale" data-range-output="preference-font-scale-value" min="80" max="140" value="{{ pref.font_scale }}"><output id="preference-font-scale-value" for="preference-font-scale">{{ pref.font_scale }}%</output></label><div class="preference-row"><div><strong>{{ tr('Keep navigation pinned') }}</strong></div><label class="switch"><input type="checkbox" name="nav_pinned" aria-label="{{ tr('Keep navigation pinned') }}" {% if pref.nav_pinned %}checked{% endif %}><span></span></label></div></section>
+    <footer><span>{{ tr('Changes apply to your account on every device.') }}</span><button class="primary">{{ tr('Save preferences') }}</button></footer>
+    </form>
+    <section id="pref-panel-notifications" role="tabpanel" aria-labelledby="pref-tab-notifications" tabindex="0" data-pref-panel="notifications" hidden><h2>{{ tr('My notifications') }}</h2>
       <p>{{ tr('Your destinations receive only notifications addressed to your ServiceOps account. Team and organization channels are managed separately by administrators.') }} <a href="{{ url_for('notifications') }}">{{ tr('Open notification inbox') }}</a>.</p>
       <div class="preference-row" data-web-push><div><strong>{{ tr('Desktop notifications on this browser') }}</strong><small data-web-push-status>{{ tr('Show ServiceOps notifications on this computer even when no ServiceOps tab is open.') }}</small>{% if current_user.effective_role in ('admin', 'superadmin') %}<small data-web-push-admin hidden><a href="{{ url_for('system_settings_category', category='push_notifications') }}#WEB_PUSH_ENABLED">{{ tr('Turn on browser desktop notifications in Push notification settings') }}</a></small>{% endif %}</div><div class="ui-cluster"><button type="button" class="button" data-web-push-test hidden>{{ tr('Send a test notification') }}</button><button type="button" class="button" data-web-push-toggle disabled>{{ tr('Turn on') }}</button></div></div>
+      <form method="post" class="preferences-notification-form">
+      <input type="hidden" name="action" value="notifications">
       <div class="preference-group">
       <div class="preference-row preference-row-main"><div><strong>{{ tr('Email notifications') }}</strong><small>{{ tr('Email me when something needs my attention. Every notification also stays in the in-app inbox.') }}</small></div><label class="switch"><input type="checkbox" name="email_enabled" aria-label="{{ tr('Email notifications') }}" aria-controls="email-event-types" data-enables="email-event-types" {% if notification_pref.email_enabled %}checked{% endif %}><span></span></label></div>
       {% if mutable_event_types %}
       <fieldset class="preference-subgroup" id="email-event-types" {% if not notification_pref.email_enabled %}disabled{% endif %}>
-        <legend>{{ tr('Email me about') }}<small data-text-enabled="{{ tr('Turn off the ones you do not want by email.') }}" data-text-disabled="{{ tr('Turn on email notifications to choose.') }}">{{ tr('Turn off the ones you do not want by email.') if notification_pref.email_enabled else tr('Turn on email notifications to choose.') }}</small></legend>
+        <legend>{{ tr('Email me about') }}</legend><p class="preference-group-hint" data-text-enabled="{{ tr('Turn off the ones you do not want by email.') }}" data-text-disabled="{{ tr('Turn on email notifications to choose.') }}">{{ tr('Turn off the ones you do not want by email.') if notification_pref.email_enabled else tr('Turn on email notifications to choose.') }}</p>
         {% for key, meta in mutable_event_types.items() %}
         <div class="preference-row"><div><strong>{{ tr_value(meta.label) }}</strong><small>{{ meta.description }}</small></div><label class="switch"><input type="checkbox" name="email_{{ key }}" aria-label="{{ tr_value(meta.label) }}" {% if key not in muted_types %}checked{% endif %}><span></span></label></div>
         {% endfor %}
@@ -59,19 +65,21 @@
       {% endif %}
       </div>
       <p class="muted">{{ tr('Password recovery emails are always sent, even with email notifications off, because you asked for them.') }}</p>
-      <button type="submit" name="action" value="notifications" class="primary">{{ tr('Save notification preferences') }}</button>
+      <button type="submit" class="primary">{{ tr('Save notification preferences') }}</button>
+      </form>
       <div class="personal-channel-list"><h3>{{ tr('My chat destinations') }}</h3>
-      {% for row in personal_connections %}<article class="personal-channel"><div><strong>{{ row.name }}</strong><small>{{ tr('{get} · {event_types} event types · {value}', get=(provider_labels.get(row.kind,row.kind)), event_types=(row.event_types|length), value=(tr('Active') if row.active else tr('Paused'))) }}</small></div><div class="record-actions"><button name="action" value="test_personal_channel:{{ row.id }}">{{ tr('Send test') }}</button><button name="action" value="toggle_personal_channel:{{ row.id }}">{{ tr('Pause') if row.active else tr('Enable') }}</button><button name="action" value="delete_personal_channel:{{ row.id }}" class="danger">{{ tr('Remove') }}</button></div></article>{% else %}<p class="muted">{{ tr('You have no personal chat destination yet.') }}</p>{% endfor %}
+      {% for row in personal_connections %}<article class="personal-channel"><div><strong>{{ row.name }}</strong><small>{{ tr('{get} · {event_types} event types · {value}', get=(provider_labels.get(row.kind,row.kind)), event_types=(row.event_types|length), value=(tr('Active') if row.active else tr('Paused'))) }}</small></div><form method="post" class="record-actions"><button name="action" value="test_personal_channel:{{ row.id }}">{{ tr('Send test') }}</button><button name="action" value="toggle_personal_channel:{{ row.id }}">{{ tr('Pause') if row.active else tr('Enable') }}</button><button name="action" value="delete_personal_channel:{{ row.id }}" class="danger">{{ tr('Remove') }}</button></form></article>{% else %}<p class="muted">{{ tr('You have no personal chat destination yet.') }}</p>{% endfor %}
       </div>
       <details class="personal-channel-add"><summary>{{ tr('Add a personal chat destination') }}</summary>
+        <form method="post" class="personal-channel-form">
         <div class="detail-grid"><label>{{ tr('Name') }}<input name="name" maxlength="160" placeholder="{{ tr('My Telegram') }}"></label><label>{{ tr('Provider') }}<select name="kind"><option value="telegram">{{ tr('Telegram bot') }}</option><option value="google_chat">{{ tr('Google Chat') }}</option><option value="slack">{{ tr('Slack') }}</option><option value="teams">{{ tr('Microsoft Teams') }}</option><option value="discord">{{ tr('Discord') }}</option></select></label></div>
         <label>{{ tr('Webhook URL') }}<input type="url" name="endpoint" placeholder="{{ tr('Required except for Telegram') }}"></label>
         <div class="detail-grid"><label>{{ tr('Telegram bot token') }}<input type="password" name="secret" autocomplete="new-password"></label><label>{{ tr('Telegram chat ID') }}<input name="chat_id" maxlength="120"></label></div>
         <fieldset class="subscription-picker"><legend>{{ tr('Notify me for') }}</legend><div class="subscription-grid">{% for pattern,label,description in personal_event_subscriptions %}<label class="subscription-option"><input type="checkbox" name="event_types" value="{{ pattern }}"><span><strong>{{ tr_value(label) }}</strong><small>{{ tr_value(description) }}</small></span></label>{% endfor %}</div></fieldset>
         <button type="submit" name="action" value="create_personal_channel" class="primary">{{ tr('Add my destination') }}</button>
+        </form>
       </details>
     </section>
-    <footer><span>{{ tr('Changes apply to your account on every device.') }}</span><button class="primary">{{ tr('Save preferences') }}</button></footer>
   </div>
-</form>
+</div>
 {% endblock %}

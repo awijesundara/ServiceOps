@@ -98,7 +98,50 @@ body main .preferences-nav button{min-height:44px;padding:12px 16px;font-size:14
 @media(max-width:700px){body main .page-head{gap:var(--space-3);margin-bottom:var(--space-5)}body main :is(.list-toolbar,.record-toolbar){padding:var(--space-3)}body main .form-grid{grid-template-columns:minmax(0,1fr)}body main :is(.inline-form,.list-search){min-width:0;flex-wrap:wrap}body main .inline-form>label{min-width:0;flex:1 1 180px}body main .list-search>input{min-width:0;max-width:100%}}
 @media(pointer:coarse){body{--icon-target:44px}}
 body main .record-shell>.state-track{margin:var(--space-4) var(--panel-padding) 0}
-body main .preferences-nav button{padding-block:11px;box-sizing:border-box}
+body main .preferences-nav button{padding-block:11px;box-sizing:border-box;flex-shrink:0}
+/* Settings groups use one frame and inset dividers, with equal text/control
+   gutters. Fieldset legends stay in normal fieldset layout, never floated. */
+body main .preferences-content{min-width:0;width:100%;box-sizing:border-box}
+body main #display-preferences{margin:0}
+body main #display-preferences[hidden]{display:none}
+body main #display-preferences>section>label{display:grid;gap:var(--space-2);max-width:520px;margin:var(--space-3) 0}
+body main .preferences-content footer{gap:var(--space-4);flex-wrap:wrap}
+body main .preference-row{column-gap:var(--space-4)}
+body main .preference-row>div:first-child{min-width:0;overflow-wrap:anywhere}
+body main .preference-row .switch{flex:0 0 46px;margin:0}
+body main .preference-row[data-web-push]{flex-wrap:wrap}
+body main .preference-row[data-web-push]>div:first-child{flex:1 1 240px}
+body main .preference-row[data-web-push]>.ui-cluster{justify-content:flex-end;margin-inline-start:auto;max-width:100%}
+body main .preference-row [data-web-push-toggle]{white-space:nowrap}
+/* Email notifications: one main switch, and the per-type switches nested
+   beneath it in an inset panel, so the hierarchy reads at a glance. */
+body main .preference-group{border:var(--border-width) solid var(--line);border-radius:var(--surface-radius);margin-block:var(--space-4);overflow:hidden}
+body main .preference-group .preference-row{margin:0;border-radius:0}
+body main .preference-group>.preference-row-main{margin:0 var(--panel-padding);padding:var(--space-4) 0;border-bottom:0}
+body main .preference-subgroup{min-width:0;margin:0;padding:var(--space-2) var(--panel-padding) var(--space-2) calc(var(--panel-padding) + var(--space-4));border:0;border-top:var(--border-width) solid var(--line);background:var(--surface-subtle)}
+body main .preference-subgroup legend{float:left;width:100%;margin:0;padding:var(--space-3) 0 0;font-size:var(--font-small);font-weight:750;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+body main .preference-group-hint{clear:both;margin:var(--space-1) 0 var(--space-2);color:var(--muted);font-size:var(--font-small)}
+body main .preference-subgroup>.preference-row{padding:var(--space-3) 0}
+body main .preference-subgroup>.preference-row strong{font-weight:650}
+body main .preference-subgroup>.preference-row:last-child{border-bottom:0}
+body main .preference-subgroup:disabled{opacity:.55}
+body main .preference-subgroup:disabled .switch{cursor:not-allowed}
+body main .preferences-notification-form{margin:0}
+body main .preferences-notification-form>button{justify-self:start}
+body main .personal-channel-form{display:grid;gap:var(--space-4)}
+body main .personal-channel-form label{min-width:0}
+body main .personal-channel-form>.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)}
+body main .personal-channel-form :is(label,.subscription-option span){overflow-wrap:anywhere}
+body main .personal-channel-form>label,body main .personal-channel-form>.detail-grid>label{display:grid;gap:var(--space-2)}
+body main .subscription-picker{min-width:0}
+body main .personal-channel-form>button{justify-self:start}
+/* Preserve the compact visual track while making the complete switch label
+   a touch target. Pointer events reach the input rather than its decoration. */
+body main label.switch{min-height:44px;padding:0}
+body main .switch input{width:100%;height:100%;z-index:1}
+body main .switch span{flex:none;pointer-events:none}
+@media(max-width:900px){body main .preferences-workspace{grid-template-rows:auto 1fr}body main .preferences-nav{align-self:start}body main .preferences-nav button{flex:1 0 auto}}
+@media(max-width:700px){body main .personal-channel-form>.detail-grid{grid-template-columns:minmax(0,1fr)}}
 @media(pointer:coarse){body main .lookup-multi{min-height:var(--control-height)}body main .lookup-multi .lookup-search{height:calc(var(--control-height) - 2px)!important;min-height:calc(var(--control-height) - 2px)!important}body main .lookup:not(.lookup-multi)>.lookup-browse{top:0;bottom:0;min-height:44px;max-height:44px}}
 body main :is(.responsive-card-grid,.module-grid,.article-grid,.catalog-grid,.dashboard-columns)>.panel{padding:var(--panel-padding);border-radius:var(--surface-radius)}
 body main :is(.requester-actions,.stats,.kpi-trend-grid){gap:var(--space-4)}
@@ -217,3 +260,5 @@ body main .portal-service-status>header h2{font-size:var(--control-font-size)}
 @media(prefers-reduced-motion:reduce){.service-feed-enter{animation:none}}
 .reduced-motion .service-feed-enter{animation:none}
 
+
+body main :is([data-scroll-region],[role=tabpanel]):focus-visible{outline:var(--focus-width) solid var(--green);outline-offset:calc(-1 * var(--focus-width))}

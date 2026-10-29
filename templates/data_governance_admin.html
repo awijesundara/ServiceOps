@@ -25,19 +25,19 @@
 <section class="panel">
   <h2>{{ tr('Retention policy') }}</h2>
   <p>{{ tr('Only') }} <strong>{{ tr('Client contact') }}</strong> {{ tr("is automatically enforced this pass (see the worker job's own disclosure) — records inactive past the window are erased (GDPR Art. 17 style scrub, same as an admin-triggered erasure), unless under a policy-level or per-record legal hold. Other record types can still be configured for documentation purposes.") }}</p>
-  <table><thead><tr><th>{{ tr('Record type') }}</th><th>{{ tr('Retention (days)') }}</th><th>{{ tr('Legal hold') }}</th><th>{{ tr('Active') }}</th><th>{{ tr('Last run') }}</th><th></th></tr></thead><tbody>
+  <table><thead><tr><th>{{ tr('Record type') }}</th><th>{{ tr('Retention policy') }}</th></tr></thead><tbody>
   {% for record_type, info in classification_registry.items() %}
     {% set policy = policies.get(record_type) %}
     <tr>
       <td>{{ tr_value(info.label) }}</td>
-      <td colspan="4">
+      <td>
         <form method="post" action="{{ url_for('data_governance_admin') }}" class="inline-form">
           <input type="hidden" name="action" value="save_retention_policy">
           <input type="hidden" name="record_type" value="{{ record_type }}">
-          <input class="u-w-6rem" name="retention_days" type="number" min="30" max="36500" value="{{ policy.retention_days if policy else 730 }}" required>
+          <label>{{ tr('Retention (days)') }}<input class="u-w-6rem" name="retention_days" aria-label="{{ tr('Retention days for {record_type}', record_type=tr_value(info.label)) }}" type="number" min="30" max="36500" value="{{ policy.retention_days if policy else 730 }}" required></label>
           <label class="check"><input name="legal_hold" type="checkbox" {% if policy and policy.legal_hold %}checked{% endif %}> {{ tr('Legal hold (blanket)') }}</label>
           <label class="check"><input name="policy_active" type="checkbox" {% if not policy or policy.active %}checked{% endif %}> {{ tr('Active') }}</label>
-          <small>{{ policy.last_run_at|usertime('%Y-%m-%d %H:%M') if policy and policy.last_run_at else tr('Never run') }}{% if policy and policy.last_run_at %} · {{ tr('{last_run_count} erased', last_run_count=(policy.last_run_count)) }}{% endif %}</small>
+          <small>{{ tr('Last run') }}: {{ policy.last_run_at|usertime('%Y-%m-%d %H:%M') if policy and policy.last_run_at else tr('Never run') }}{% if policy and policy.last_run_at %} · {{ tr('{last_run_count} erased', last_run_count=(policy.last_run_count)) }}{% endif %}</small>
           <button class="button">{{ tr('Save') }}</button>
         </form>
       </td>

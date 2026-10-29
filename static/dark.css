@@ -311,6 +311,7 @@ html.theme-dark .csat-done-stars .is-on{color:var(--brand-accent,#f9aa3c)}
 html.theme-dark .change-review-prompt{border:1px solid var(--line);border-left:4px solid var(--brand-accent,#62503b);background:var(--panel,#182128)}
 html.theme-dark .change-review-head p{color:var(--muted)}
 html.theme-dark .change-review-step{background:var(--brand-accent,#5e3c0b);color:#1d1d1d}
+html.theme-dark .cell-note{color:var(--muted)}
 /* enterprise.css */
 html.theme-dark .module-card{color:inherit}
 html.theme-dark .module-card:hover{border-color:#365750}
@@ -970,7 +971,7 @@ html.theme-dark .client-empty{color:var(--muted)}
 }/* integrations.css */
 html.theme-dark .provider-card{border:1px solid var(--line);background:#12181c}
 html.theme-dark .provider-card[open]{background:#182128;border-color:var(--dk-accent)}
-html.theme-dark .provider-card summary:hover{background:#171d21}
+html.theme-dark .provider-card summary:hover{background:var(--surface-subtle,#171d21)}
 html.theme-dark .provider-card[open] summary{border-bottom:1px solid var(--line)}
 html.theme-dark .provider-card summary span{color:var(--muted)}
 html.theme-dark .subscription-editor>summary{color:var(--link)}
@@ -1009,10 +1010,6 @@ html.theme-dark .email-method{border:1px solid var(--line)}
 html.theme-dark .email-method:has(input:checked){border-color:var(--dk-accent);box-shadow:0 0 0 1px var(--dk-accent)}
 html.theme-dark .email-field small{color:var(--muted)}
 html.theme-dark .email-required{color:#ec8575}
-html.theme-dark .preference-group{border:1px solid var(--line)}
-html.theme-dark .preference-row-main{background:var(--surface-muted,transparent)}
-html.theme-dark .preference-subgroup{border:0;border-top:1px solid var(--line)}
-html.theme-dark .preference-subgroup legend small{color:var(--muted)}
 /* ai-chat.css */
 html.theme-dark .ai-run a:not(.button):not(.ai-cite){color:var(--dk-accent-strong)}
 html.theme-dark .ai-pill{background:var(--ai-soft);color:var(--dk-accent)}
@@ -1592,6 +1589,12 @@ html.theme-dark body .wi-tabs button[aria-selected=true]{background:var(--brand-
 html.theme-dark.theme-dark body .project-tabs a[aria-current=page],html.theme-dark.theme-dark body .wi-tabs button[aria-selected=true]{background:var(--surface-subtle,#25343f);color:var(--ink)}
 html.theme-dark.theme-dark body .project-tabs a[aria-current=page]::after{background:var(--dk-accent)}
 html.theme-dark.theme-dark body .wi-tabs button[aria-selected=true]{border-bottom-color:var(--dk-accent)}
+html.theme-dark body main .preference-group{border:var(--border-width) solid var(--line)}
+html.theme-dark body main .preference-group>.preference-row-main{border-bottom:0}
+html.theme-dark body main .preference-subgroup{border:0;border-top:var(--border-width) solid var(--line);background:var(--surface-subtle)}
+html.theme-dark body main .preference-subgroup legend{color:var(--muted)}
+html.theme-dark body main .preference-group-hint{color:var(--muted)}
+html.theme-dark body main .preference-subgroup>.preference-row:last-child{border-bottom:0}
 html.theme-dark .ui-hint{color:var(--muted)}
 html.theme-dark .ui-error{color:var(--red)}
 html.theme-dark .ui-panel{border:var(--border-width) solid var(--line);background:var(--white)}
@@ -1635,6 +1638,7 @@ html.theme-dark .service-feed-label{color:var(--dk-accent);background:var(--bran
 html.theme-dark .service-feed-item .portal-status-row{border:0}
 html.theme-dark .service-feed-item a.service-headline{color:var(--ink)}
 html.theme-dark .service-feed-item a.service-headline:focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
+html.theme-dark body main :is([data-scroll-region],[role=tabpanel]):focus-visible{outline:var(--focus-width) solid var(--dk-accent)}
 /* Theme tokens. The configured brand color stays the identity color of the
    sidebar and filled buttons; accents used as text are lifted toward white so
    they stay readable on dark surfaces whatever brand color is configured. */

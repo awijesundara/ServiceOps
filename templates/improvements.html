@@ -7,7 +7,7 @@
 </header>
 
 <form class="filters">
-  <select name="status" data-auto-submit>
+  <select aria-label="{{ tr('Status') }}" name="status" data-auto-submit>
     <option value="">{{ tr('All statuses') }}</option>
     {% for state in states %}<option value="{{ state }}" {% if status_filter==state %}selected{% endif %}>{{ tr_value(state) }}</option>{% endfor %}
   </select>
