@@ -50,7 +50,21 @@ def add_routes(blueprint):
         header = request.form.get("auth_header", "").strip() or mcp.DEFAULT_AUTH_HEADER
         role = request.form.get("minimum_role", "agent")
         secret = request.form.get("auth_value", "").strip()
+        mode = request.form.get("auth_mode", "header")
+        token_url, client_id = "", ""
+        token_scope = " ".join(request.form.get("token_scope", "").split())[:300]
         try:
+            if mode not in mcp.AUTH_MODES:
+                raise mcp.McpError(tr("Choose one of the listed sign-in methods."))
+            if mode == "client_credentials":
+                client_id = request.form.get("client_id", "").strip()
+                if not client_id or len(client_id) > 200 or not all(33 <= ord(ch) <= 126 for ch in client_id):
+                    raise mcp.McpError(tr("Enter the OAuth client ID."))
+                if any(not 33 <= ord(ch) <= 126 for ch in token_scope.replace(" ", "")):
+                    raise mcp.McpError(tr("The scope may contain only visible characters and spaces."))
+                token_url = mcp.check_destination(request.form.get("token_url", ""))[0]
+                if not secret and not (server and server.auth_mode == "client_credentials" and server.auth_encrypted):
+                    raise mcp.McpError(tr("Enter the OAuth client secret."))
             if not name:
                 raise mcp.McpError(tr("Enter a name for the server."))
             if role not in mcp.TOOL_ROLES:
@@ -71,13 +85,15 @@ def add_routes(blueprint):
         if creating:
             server = AIToolServer(tenant_id=current_user.tenant_id, url=url)
             db.session.add(server)
-        moved = not creating and (server.url != url or server.auth_header != header)
+        moved = not creating and (server.url != url or server.auth_header != header or server.auth_mode != mode
+                                  or server.token_url != token_url or server.client_id != client_id)
         if moved:
             # A credential belongs to one destination, and a different server may offer different tools.
             server.auth_encrypted = ""
             for tool in server.tools:
                 tool.enabled = False
         server.name, server.url, server.auth_header, server.minimum_role = name, url, header, role
+        server.auth_mode, server.token_url, server.client_id, server.token_scope = mode, token_url, client_id, token_scope
         server.share_external = request.form.get("share_external") == "on"
         server.enabled = request.form.get("enabled", "on") == "on"
         if secret:
@@ -85,8 +101,9 @@ def add_routes(blueprint):
         elif request.form.get("clear_auth") == "on":
             server.auth_encrypted = ""
         db.session.flush()
+        mcp.forget_token(server.id)
         audit("ai tool server created" if creating else "ai tool server updated", f"Connected tools: {server.name}",
-              f"url={url}; role={role}; share_external={server.share_external}; enabled={server.enabled}; "
+              f"url={url}; sign_in={mode}; client={client_id or '-'}; role={role}; share_external={server.share_external}; enabled={server.enabled}; "
               f"credential={'set' if server.auth_encrypted else 'none'}" + ("; tools disabled after the address changed" if moved else ""))
         db.session.commit()
         if creating or moved:
@@ -110,6 +127,7 @@ def add_routes(blueprint):
         service.actor(current_user)
         server = owned_server(server_id)
         name = server.name
+        mcp.forget_token(server.id)
         db.session.delete(server)
         audit("ai tool server removed", f"Connected tools: {name}")
         db.session.commit()

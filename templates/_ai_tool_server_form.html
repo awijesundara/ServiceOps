@@ -3,9 +3,16 @@
   <label>{{ tr('Name') }}<input name="name" maxlength="80" required value="{{ server.name if server else '' }}" placeholder="{{ tr('Network inventory') }}"></label>
   <label>{{ tr('MCP address') }}<input name="url" maxlength="500" required inputmode="url" value="{{ server.url if server else '' }}" placeholder="{{ tr('https://tools.example.com/mcp') }}">
     <small class="muted">{{ tr('Remote MCP servers only (Streamable HTTP). A server on your own network must be allowlisted by the deployment operator in AI_MCP_PRIVATE_ENDPOINTS.') }}</small></label>
+  <label>{{ tr('Sign-in') }}<select name="auth_mode">
+    <option value="header" {% if not server or server.auth_mode == 'header' %}selected{% endif %}>{{ tr('Fixed credential header') }}</option>
+    <option value="client_credentials" {% if server and server.auth_mode == 'client_credentials' %}selected{% endif %}>{{ tr('OAuth client credentials') }}</option>
+  </select><small class="muted">{{ tr('OAuth client credentials: ServiceOps gets short-lived access tokens from the token service with the client ID and secret below.') }}</small></label>
+  <label>{{ tr('Token address (OAuth)') }}<input name="token_url" maxlength="500" inputmode="url" value="{{ server.token_url if server else '' }}" placeholder="{{ tr('https://login.example.com/realms/company/protocol/openid-connect/token') }}"></label>
+  <label>{{ tr('Client ID (OAuth)') }}<input name="client_id" maxlength="200" autocomplete="off" value="{{ server.client_id if server else '' }}"></label>
+  <label>{{ tr('Scope (OAuth)') }}<input name="token_scope" maxlength="300" autocomplete="off" value="{{ server.token_scope if server else '' }}" placeholder="{{ tr('Optional, for example rt:read:service') }}"></label>
   <label>{{ tr('Credential header') }}<input name="auth_header" maxlength="80" value="{{ server.auth_header if server else default_auth_header }}" pattern="[A-Za-z0-9-]{1,80}"></label>
-  <label>{{ tr('Credential') }}<input name="auth_value" type="password" maxlength="4000" autocomplete="new-password" placeholder="{{ tr('Unchanged') if server and server.auth_encrypted else tr('For example: Bearer <token>') }}">
-    <small class="muted">{{ tr('Stored encrypted and never shown again. Changing the address or header removes it.') }}</small></label>
+  <label>{{ tr('Credential or client secret') }}<input name="auth_value" type="password" maxlength="4000" autocomplete="new-password" placeholder="{{ tr('Unchanged') if server and server.auth_encrypted else tr('For example: Bearer <token>') }}">
+    <small class="muted">{{ tr('Stored encrypted and never shown again. Changing the address, header, sign-in method, token address or client ID removes it.') }}</small></label>
   {% if server and server.auth_encrypted %}<label class="check"><span><input type="checkbox" name="clear_auth"> {{ tr('Remove the stored credential') }}</span></label>{% endif %}
   <label>{{ tr('Who may use it') }}<select name="minimum_role">
     {% for role in tool_roles %}<option value="{{ role }}" {% if (server.minimum_role if server else 'agent') == role %}selected{% endif %}>{{ tr('{role} and above', role=tr(role)) }}</option>{% endfor %}

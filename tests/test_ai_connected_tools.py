@@ -34,6 +34,7 @@ class FakeMcp:
 
     def __init__(self):
         self.calls, self.headers, self.sse, self.fail_calls, self.reply = [], [], False, False, None
+        self.oauth, self.token_requests, self.valid_token = False, [], None
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -45,7 +46,30 @@ class FakeMcp:
                 self.end_headers()
 
             def do_POST(self):
-                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                raw = self.rfile.read(int(self.headers["Content-Length"]))
+                if self.path == "/token":
+                    import base64
+                    from urllib.parse import parse_qs
+                    form = {k: v[0] for k, v in parse_qs(raw.decode()).items()}
+                    owner.token_requests.append(form)
+                    good = self.headers.get("Authorization") == "Basic " + base64.b64encode(b"serviceops:client-secret-1").decode()
+                    if not good or form.get("grant_type") != "client_credentials":
+                        self.send_response(401)
+                        self.end_headers()
+                        return
+                    owner.valid_token = f"token-{len(owner.token_requests)}"
+                    payload = json.dumps({"access_token": owner.valid_token, "token_type": "Bearer", "expires_in": 300}).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                if owner.oauth and self.headers.get("Authorization") != f"Bearer {owner.valid_token}":
+                    self.send_response(401)
+                    self.end_headers()
+                    return
+                body = json.loads(raw)
                 owner.headers.append(dict(self.headers))
                 if "id" not in body:  # a notification
                     self.send_response(202)
@@ -355,3 +379,84 @@ def test_credentials_are_encrypted_with_the_settings_cipher(app):
     with app.app_context():
         token = mcp.encrypt_credential("Bearer abc")
         assert settings_cipher().decrypt(token.encode()).decode() == "Bearer abc"
+
+
+
+# ----------------------------------------------------------------------------- OAuth client credentials
+
+def oauth_server(app, fake, **extra):
+    with app.app_context():
+        server = AIToolServer(tenant_id=1, name=f"RT {uuid.uuid4().hex[:6]}", url=fake.url, auth_mode="client_credentials",
+                              token_url=fake.url.rsplit("/", 1)[0] + "/token", client_id="serviceops",
+                              token_scope="rt:read:service", auth_encrypted=mcp.encrypt_credential("client-secret-1"), **extra)
+        db.session.add(server)
+        db.session.commit()
+        return server.id
+
+
+def test_client_credentials_tokens_are_fetched_cached_and_sent_as_bearer(app, fake_mcp):
+    fake_mcp.oauth = True
+    server_id = oauth_server(app, fake_mcp)
+    with app.app_context():
+        server = db.session.get(AIToolServer, server_id)
+        assert mcp.discover(server)[0] == 3
+        mcp.discover(server)
+        assert len(fake_mcp.token_requests) == 1  # cached between sessions
+        assert fake_mcp.token_requests[0] == {"grant_type": "client_credentials", "scope": "rt:read:service"}
+        assert fake_mcp.headers[-1]["Authorization"] == "Bearer token-1"
+        assert "client-secret-1" not in json.dumps(fake_mcp.headers)
+
+
+def test_a_rejected_token_is_refreshed_once(app, fake_mcp):
+    fake_mcp.oauth = True
+    server_id = oauth_server(app, fake_mcp)
+    with app.app_context():
+        server = db.session.get(AIToolServer, server_id)
+        mcp.discover(server)
+        fake_mcp.valid_token = "revoked-by-the-service"  # the cached token-1 is no longer accepted
+        with mcp.Session(server) as session:
+            text, failed = session.call("get_device", {"name": "core-sw-01"})
+        assert not failed and len(fake_mcp.token_requests) == 2
+
+
+def test_a_wrong_client_secret_is_reported_without_calling_the_server(app, fake_mcp):
+    fake_mcp.oauth = True
+    server_id = oauth_server(app, fake_mcp)
+    with app.app_context():
+        server = db.session.get(AIToolServer, server_id)
+        server.auth_encrypted = mcp.encrypt_credential("wrong")
+        db.session.commit()
+        mcp.forget_token(server_id)
+        with pytest.raises(mcp.McpError, match="rejected the client"):
+            mcp.discover(server)
+        assert not fake_mcp.calls and all(h.get("Authorization", "").startswith("Basic") is False for h in fake_mcp.headers)
+
+
+def test_token_addresses_follow_the_same_destination_rules(app, fake_mcp, monkeypatch):
+    server_id = oauth_server(app, fake_mcp, )
+    with app.app_context():
+        server = db.session.get(AIToolServer, server_id)
+        server.token_url = "http://10.9.9.9:8080/token"  # private, not allowlisted
+        db.session.commit()
+        mcp.forget_token(server_id)
+        with pytest.raises(mcp.McpError, match="AI_MCP_PRIVATE_ENDPOINTS"):
+            mcp.access_token(server)
+
+
+def test_admin_form_saves_oauth_and_changing_the_client_removes_the_secret(app, client, world, chat_ready, fake_mcp):
+    fake_mcp.oauth = True
+    login(client)
+    token_url = fake_mcp.url.rsplit("/", 1)[0] + "/token"
+    form = {"name": "RT tickets", "url": fake_mcp.url, "auth_mode": "client_credentials", "token_url": token_url,
+            "client_id": "serviceops", "token_scope": "rt:read:service", "minimum_role": "agent"}
+    client.post("/admin/ai/tools/servers", data=form)  # no secret: refused
+    with app.app_context():
+        assert not AIToolServer.query.filter_by(name="RT tickets").first()
+    client.post("/admin/ai/tools/servers", data={**form, "auth_value": "client-secret-1"})
+    with app.app_context():
+        server = AIToolServer.query.filter_by(name="RT tickets").one()
+        assert server.auth_mode == "client_credentials" and server.last_ok and len(server.tools) == 3
+        server_id = server.id
+    client.post("/admin/ai/tools/servers", data={**form, "server_id": server_id, "client_id": "other-client", "enabled": "on"})
+    with app.app_context():
+        assert db.session.get(AIToolServer, server_id).auth_encrypted == ""

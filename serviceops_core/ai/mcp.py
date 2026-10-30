@@ -19,8 +19,10 @@ Safety rules kept here, not in templates:
   AI unless the administrator marked the server's data as shareable with external services.
 * Any tool failure is reported as a step and the answer continues without that tool.
 """
+import hashlib
 import json
 import re
+import threading
 import time
 from contextlib import nullcontext
 from urllib.parse import urlsplit
@@ -53,6 +55,16 @@ _HEADER_NAME = re.compile(r"[A-Za-z0-9-]{1,80}")
 
 class McpError(ValueError):
     """A display-safe reason a connected tool could not be used."""
+
+
+class CredentialRejected(McpError):
+    """The server refused the credential (HTTP 401/403); an OAuth token may be refreshed once."""
+
+
+AUTH_MODES = ("header", "client_credentials")
+TOKEN_BYTES = 64 * 1024
+_tokens = {}  # server id -> (fingerprint, access token, monotonic expiry); process-local, never stored
+_tokens_lock = threading.Lock()
 
 
 # --------------------------------------------------------------------------- server addresses
@@ -100,6 +112,62 @@ def credential(server):
         raise McpError(tr("The server's credential could not be decrypted. Enter it again.")) from None
 
 
+def forget_token(server_id):
+    with _tokens_lock:
+        _tokens.pop(server_id, None)
+
+
+def access_token(server, *, refresh=False):
+    """A short-lived access token from the server's OAuth token service (client-credentials grant).
+
+    The token URL and client ID are read back from the saved server record and checked with the same destination
+    rules as MCP servers. Tokens are cached in memory until shortly before they expire, and never stored."""
+    row = db.session.query(AIToolServer.token_url, AIToolServer.client_id, AIToolServer.token_scope,
+                           AIToolServer.auth_encrypted).filter(AIToolServer.id == server.id,
+                                                               AIToolServer.tenant_id == server.tenant_id).first()
+    if not row or not row.token_url or not row.client_id or not row.auth_encrypted:
+        raise McpError(tr("Enter the token address, client ID and client secret for this server."))
+    fingerprint = hashlib.sha256("|".join((row.token_url, row.client_id, row.token_scope, row.auth_encrypted)).encode()).hexdigest()
+    with _tokens_lock:
+        cached = _tokens.get(server.id)
+        if cached and not refresh and cached[0] == fingerprint and cached[2] > time.monotonic():
+            return cached[1]
+    url, hostname, infos = check_destination(row.token_url)
+    form = {"grant_type": "client_credentials"}
+    if row.token_scope:
+        form["scope"] = row.token_scope
+    started = time.monotonic()
+    try:
+        with requests.Session() as http:
+            http.trust_env = False
+            with pin_resolved_addresses(hostname, infos) if hostname else nullcontext():
+                with http.post(url, data=form, auth=(row.client_id, credential(server)), headers={"Accept": "application/json"},
+                               timeout=(5, 10), allow_redirects=False, stream=True) as response:
+                    if response.status_code in (400, 401, 403):
+                        raise McpError(tr("The token service rejected the client ID, secret or scope."))
+                    if response.status_code != 200:
+                        raise McpError(tr("The token service returned HTTP {status}.", status=response.status_code))
+                    body = bytearray()
+                    for chunk in response.iter_content(8192):
+                        body.extend(chunk)
+                        if len(body) > TOKEN_BYTES or time.monotonic() - started > 10:
+                            raise McpError(tr("The token service's answer exceeded its size or time limit."))
+        data = json.loads(body)
+    except McpError:
+        raise
+    except (requests.RequestException, OSError, ValueError):
+        raise McpError(tr("The token service could not be reached or sent an invalid answer.")) from None
+    token = data.get("access_token") if isinstance(data, dict) else None
+    if not isinstance(token, str) or not re.fullmatch(r"[\x21-\x7e]{1,8192}", token) \
+            or str(data.get("token_type", "bearer")).lower() != "bearer":
+        raise McpError(tr("The token service did not return a bearer access token."))
+    lifetime = data.get("expires_in")
+    lifetime = min(max(int(lifetime), 30), 3600) if isinstance(lifetime, (int, float)) and not isinstance(lifetime, bool) else 60
+    with _tokens_lock:
+        _tokens[server.id] = (fingerprint, token, time.monotonic() + lifetime - 20)
+    return token
+
+
 def encrypt_credential(value):
     return settings_cipher().encrypt(value.encode()).decode() if value else ""
 
@@ -122,13 +190,17 @@ class Session:
         self.session_id = None
         self.negotiated = None
         self._next_id = 0
-        header = server.auth_header or DEFAULT_AUTH_HEADER
-        if not _HEADER_NAME.fullmatch(header):
-            raise McpError(tr("The credential header name may contain only letters, digits and hyphens."))
-        secret = credential(server)
+        self.oauth = server.auth_mode == "client_credentials"
         self.headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
-        if secret:
-            self.headers[header] = secret
+        if self.oauth:
+            self.headers["Authorization"] = "Bearer " + access_token(server)
+        else:
+            header = server.auth_header or DEFAULT_AUTH_HEADER
+            if not _HEADER_NAME.fullmatch(header):
+                raise McpError(tr("The credential header name may contain only letters, digits and hyphens."))
+            secret = credential(server)
+            if secret:
+                self.headers[header] = secret
         self.http = requests.Session()
         self.http.trust_env = False  # no process proxy settings: the destination checks below are the policy
 
@@ -159,7 +231,7 @@ class Session:
                                        headers=headers, timeout=(5, self.seconds), allow_redirects=False,
                                        stream=True) as response:
                     if response.status_code in (401, 403):
-                        raise McpError(tr("The server rejected the credential."))
+                        raise CredentialRejected(tr("The server rejected the credential."))
                     if response.status_code == 404 and self.session_id:
                         raise McpError(tr("The server ended the session. Try again."))
                     if not expect:
@@ -185,7 +257,14 @@ class Session:
         message = {"jsonrpc": "2.0", "id": self._next_id, "method": method}
         if params is not None:
             message["params"] = params
-        reply, headers = self._send("POST", message)
+        try:
+            reply, headers = self._send("POST", message)
+        except CredentialRejected:
+            if not self.oauth:
+                raise
+            # An access token can be revoked or expire early: fetch a new one once, then give up.
+            self.headers["Authorization"] = "Bearer " + access_token(self.server, refresh=True)
+            reply, headers = self._send("POST", message)
         if method == "initialize" and headers.get("Mcp-Session-Id"):
             value = headers["Mcp-Session-Id"]
             if not re.fullmatch(r"[\x21-\x7e]{1,200}", value):

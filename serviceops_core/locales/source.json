@@ -2883,6 +2883,9 @@
    "id": "Choose one of the listed roles."
   },
   {
+   "id": "Choose one of the listed sign-in methods."
+  },
+  {
    "id": "Choose only the activity this destination needs. Changes apply to future events."
   },
   {
@@ -3015,6 +3018,9 @@
   },
   {
    "id": "Client ID"
+  },
+  {
+   "id": "Client ID (OAuth)"
   },
   {
    "id": "Client contact"
@@ -3881,10 +3887,10 @@
    "id": "Creates a saved draft only. Existing date spans or remaining estimates determine duration. Each assigned person is reserved for the full item duration; unassigned work has no capacity constraint. Completed and read-only work stays fixed. Dependencies use finish-to-start ordering. This is not an employee availability calendar."
   },
   {
-   "id": "Credential"
+   "id": "Credential header"
   },
   {
-   "id": "Credential header"
+   "id": "Credential or client secret"
   },
   {
    "id": "Credentials are encrypted and are never shown again.",
@@ -5051,6 +5057,12 @@
    "id": "Enter the 6-digit code from your authenticator app, or one of your backup codes."
   },
   {
+   "id": "Enter the OAuth client ID."
+  },
+  {
+   "id": "Enter the OAuth client secret."
+  },
+  {
    "id": "Enter the custom proxy URL."
   },
   {
@@ -5065,6 +5077,9 @@
   },
   {
    "id": "Enter the time spent, for example 1h 30m."
+  },
+  {
+   "id": "Enter the token address, client ID and client secret for this server."
   },
   {
    "id": "Enter this ServiceOps server's HTTPS address. For local development on a physical iPhone, use the Mac's LAN address rather than"
@@ -5553,6 +5568,12 @@
   },
   {
    "id": "Fix versions"
+  },
+  {
+   "id": "Fixed credential"
+  },
+  {
+   "id": "Fixed credential header"
   },
   {
    "id": "Flag"
@@ -8342,6 +8363,9 @@
    "id": "No controlled change linked."
   },
   {
+   "id": "No credential"
+  },
+  {
    "id": "No custom fields defined yet."
   },
   {
@@ -9138,6 +9162,15 @@
    "id": "Number or short description"
   },
   {
+   "id": "OAuth client credentials"
+  },
+  {
+   "id": "OAuth client credentials: ServiceOps gets short-lived access tokens from the token service with the client ID and secret below."
+  },
+  {
+   "id": "OAuth client {client}"
+  },
+  {
    "id": "ORGANIZATION"
   },
   {
@@ -9603,6 +9636,9 @@
   },
   {
    "id": "Optional — shown to anyone blocked by this freeze"
+  },
+  {
+   "id": "Optional, for example rt:read:service"
   },
   {
    "id": "Optional. Transparent PNG recommended, maximum 5 MB."
@@ -12663,6 +12699,9 @@
    "id": "Schedules and target durations by priority"
   },
   {
+   "id": "Scope (OAuth)"
+  },
+  {
    "id": "Scopes"
   },
   {
@@ -14052,7 +14091,7 @@
    "id": "Storage backend"
   },
   {
-   "id": "Stored encrypted and never shown again. Changing the address or header removes it."
+   "id": "Stored encrypted and never shown again. Changing the address, header, sign-in method, token address or client ID removes it."
   },
   {
    "id": "Stories and all descendants",
@@ -14898,6 +14937,9 @@
    "id": "The schedule exceeds the five-year planning horizon."
   },
   {
+   "id": "The scope may contain only visible characters and spaces."
+  },
+  {
    "id": "The security token is missing or expired. Refresh the page and try again."
   },
   {
@@ -15020,6 +15062,21 @@
   },
   {
    "id": "The token for"
+  },
+  {
+   "id": "The token service could not be reached or sent an invalid answer."
+  },
+  {
+   "id": "The token service did not return a bearer access token."
+  },
+  {
+   "id": "The token service rejected the client ID, secret or scope."
+  },
+  {
+   "id": "The token service returned HTTP {status}."
+  },
+  {
+   "id": "The token service's answer exceeded its size or time limit."
   },
   {
    "id": "The work item gets a new key; links to the old key keep working. Subtasks move with it. Components and versions belong to this project and are removed."
@@ -15447,6 +15504,9 @@
   },
   {
    "id": "Token (shown once)"
+  },
+  {
+   "id": "Token address (OAuth)"
   },
   {
    "id": "Token issued for one monitoring source."
@@ -17367,6 +17427,9 @@
   },
   {
    "id": "https://docs.google.com/spreadsheets/d/…"
+  },
+  {
+   "id": "https://login.example.com/realms/company/protocol/openid-connect/token"
   },
   {
    "id": "https://servicedesk.example.com"

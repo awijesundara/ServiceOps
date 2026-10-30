@@ -121,6 +121,7 @@
             {% elif server.last_ok %}<span class="ai-pill" data-state="completed">{{ tr('Working') }}</span>
             {% elif server.last_ok is not none %}<span class="ai-pill" data-state="failed">{{ tr('Not reachable') }}</span>
             {% else %}<span class="ai-pill" data-state="queued">{{ tr('Not checked yet') }}</span>{% endif %}
+            {{ tr('OAuth client {client}', client=server.client_id) if server.auth_mode == 'client_credentials' else (tr('Fixed credential') if server.auth_encrypted else tr('No credential')) }} ·
             {{ tr('For {role} and above', role=tr(server.minimum_role)) }} ·
             {{ tr('Results may go to outside AI services') if server.share_external else tr('Results stay on your own AI') }}
             {% if server.last_error %}· {{ server.last_error }}{% endif %}
