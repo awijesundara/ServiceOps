@@ -34,12 +34,32 @@ class FakeMcp:
 
     def __init__(self):
         self.calls, self.headers, self.sse, self.fail_calls, self.reply = [], [], False, False, None
-        self.oauth, self.token_requests, self.valid_token = False, [], None
+        self.oauth, self.token_requests, self.valid_token, self.api_key = False, [], None, None
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
+
+            def _json(self, status, document):
+                payload = json.dumps(document).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def do_GET(self):
+                base = owner.url.rsplit("/", 1)[0]
+                if owner.oauth and self.path == "/.well-known/oauth-protected-resource/mcp":
+                    self._json(200, {"resource": owner.url, "authorization_servers": [base + "/as"],
+                                     "scopes_supported": ["rt:read", "rt:read:service"]})
+                elif owner.oauth and self.path == "/.well-known/openid-configuration/as":  # OIDC path-insertion form
+                    self._json(200, {"issuer": base + "/as", "token_endpoint": base + "/token",
+                                     "grant_types_supported": ["authorization_code", "client_credentials"]})
+                else:
+                    self.send_response(404)
+                    self.end_headers()
 
             def do_DELETE(self):
                 self.send_response(204)
@@ -67,6 +87,12 @@ class FakeMcp:
                     return
                 if owner.oauth and self.headers.get("Authorization") != f"Bearer {owner.valid_token}":
                     self.send_response(401)
+                    self.send_header("WWW-Authenticate", f'Bearer resource_metadata="{owner.url.rsplit("/", 1)[0]}/.well-known/oauth-protected-resource/mcp"')
+                    self.end_headers()
+                    return
+                if owner.api_key and self.headers.get("Authorization") != f"Bearer {owner.api_key}":
+                    self.send_response(401)
+                    self.send_header("WWW-Authenticate", "Bearer")
                     self.end_headers()
                     return
                 body = json.loads(raw)
@@ -180,11 +206,12 @@ def test_private_servers_need_the_operator_allowlist_and_internet_servers_need_h
 # ----------------------------------------------------------------------------- administration
 
 def test_discovery_keeps_tools_off_and_destructive_tools_can_never_be_enabled(app, client, world, chat_ready, fake_mcp):
+    fake_mcp.api_key = "s3cret-token"
     login(client)
     response = client.post("/admin/ai/tools/servers", data={"name": "Network inventory", "url": fake_mcp.url,
                                                              "auth_value": "Bearer s3cret-token", "minimum_role": "agent"})
     assert response.status_code == 302
-    assert fake_mcp.headers[0]["Authorization"] == "Bearer s3cret-token"
+    assert fake_mcp.headers[0]["Authorization"] == "Bearer s3cret-token"  # a "Bearer " prefix typed by the admin is not doubled
     assert fake_mcp.headers[-1]["Mcp-Session-Id"] == "session-123"
     with app.app_context():
         server = AIToolServer.query.filter_by(name="Network inventory").one()
@@ -402,7 +429,7 @@ def test_client_credentials_tokens_are_fetched_cached_and_sent_as_bearer(app, fa
         assert mcp.discover(server)[0] == 3
         mcp.discover(server)
         assert len(fake_mcp.token_requests) == 1  # cached between sessions
-        assert fake_mcp.token_requests[0] == {"grant_type": "client_credentials", "scope": "rt:read:service"}
+        assert fake_mcp.token_requests[0] == {"grant_type": "client_credentials", "scope": "rt:read:service", "resource": fake_mcp.url}
         assert fake_mcp.headers[-1]["Authorization"] == "Bearer token-1"
         assert "client-secret-1" not in json.dumps(fake_mcp.headers)
 
@@ -443,20 +470,65 @@ def test_token_addresses_follow_the_same_destination_rules(app, fake_mcp, monkey
             mcp.access_token(server)
 
 
-def test_admin_form_saves_oauth_and_changing_the_client_removes_the_secret(app, client, world, chat_ready, fake_mcp):
+def test_standard_oauth_discovery_needs_only_the_address_then_client_id_and_secret(app, client, world, chat_ready, fake_mcp):
     fake_mcp.oauth = True
     login(client)
-    token_url = fake_mcp.url.rsplit("/", 1)[0] + "/token"
-    form = {"name": "RT tickets", "url": fake_mcp.url, "auth_mode": "client_credentials", "token_url": token_url,
-            "client_id": "serviceops", "token_scope": "rt:read:service", "minimum_role": "agent"}
-    client.post("/admin/ai/tools/servers", data=form)  # no secret: refused
-    with app.app_context():
-        assert not AIToolServer.query.filter_by(name="RT tickets").first()
-    client.post("/admin/ai/tools/servers", data={**form, "auth_value": "client-secret-1"})
+    first = client.post("/admin/ai/tools/servers", data={"name": "RT tickets", "url": fake_mcp.url, "minimum_role": "agent"})
+    base = fake_mcp.url.rsplit("/", 1)[0]
     with app.app_context():
         server = AIToolServer.query.filter_by(name="RT tickets").one()
-        assert server.auth_mode == "client_credentials" and server.last_ok and len(server.tools) == 3
+        assert (server.auth_mode, server.issuer, server.token_url, server.resource) == ("oauth", base + "/as", base + "/token", fake_mcp.url)
+        assert not server.tools and not server.token_url_manual
         server_id = server.id
-    client.post("/admin/ai/tools/servers", data={**form, "server_id": server_id, "client_id": "other-client", "enabled": "on"})
+    assert first.headers["Location"].endswith(f"#server-{server_id}")
+    page = client.get("/admin/ai").get_data(as_text=True)
+    assert "signs in through" in page.lower() or "Signs in with OAuth through" in page
+    client.post("/admin/ai/tools/servers", data={"server_id": server_id, "name": "RT tickets", "url": fake_mcp.url,
+                                                 "client_id": "serviceops", "auth_value": "client-secret-1", "minimum_role": "agent", "enabled": "on"})
+    with app.app_context():
+        server = db.session.get(AIToolServer, server_id)
+        assert server.last_ok and len(server.tools) == 3
+    assert fake_mcp.token_requests[-1]["resource"] == fake_mcp.url  # RFC 8707 resource indicator
+    assert "scope" not in fake_mcp.token_requests[-1]  # the authorization server's default for the client
+    client.post("/admin/ai/tools/servers", data={"server_id": server_id, "name": "RT tickets", "url": fake_mcp.url,
+                                                 "client_id": "other-client", "minimum_role": "agent", "enabled": "on"})
     with app.app_context():
         assert db.session.get(AIToolServer, server_id).auth_encrypted == ""
+
+
+def test_a_server_needing_an_api_key_without_metadata_asks_for_a_token(app, client, world, chat_ready, fake_mcp):
+    fake_mcp.api_key = "k-123"
+    login(client)
+    client.post("/admin/ai/tools/servers", data={"name": "Keyed", "url": fake_mcp.url, "minimum_role": "agent"})
+    with app.app_context():
+        server = AIToolServer.query.filter_by(name="Keyed").one()
+        assert server.auth_mode == "bearer" and not server.tools
+        server_id = server.id
+    client.post("/admin/ai/tools/servers", data={"server_id": server_id, "name": "Keyed", "url": fake_mcp.url,
+                                                 "auth_value": "Bearer k-123", "minimum_role": "agent", "enabled": "on"})
+    with app.app_context():
+        assert len(db.session.get(AIToolServer, server_id).tools) == 3
+
+
+def test_an_open_server_needs_nothing_but_the_address(app, client, world, chat_ready, fake_mcp):
+    login(client)
+    client.post("/admin/ai/tools/servers", data={"name": "Open", "url": fake_mcp.url, "minimum_role": "agent"})
+    with app.app_context():
+        server = AIToolServer.query.filter_by(name="Open").one()
+        assert server.auth_mode == "none" and len(server.tools) == 3 and "Authorization" not in fake_mcp.headers[-1]
+
+
+def test_metadata_for_another_address_is_refused(app, fake_mcp):
+    fake_mcp.oauth = True
+    with app.app_context():
+        with pytest.raises(mcp.McpError, match="different address"):
+            mcp.protected_resource_metadata(fake_mcp.url + "/other", f'Bearer resource_metadata="{fake_mcp.url.rsplit("/", 1)[0]}/.well-known/oauth-protected-resource/mcp"')
+
+
+def test_a_custom_header_skips_discovery(app, client, world, chat_ready, fake_mcp):
+    login(client)
+    client.post("/admin/ai/tools/servers", data={"name": "Custom", "url": fake_mcp.url, "auth_header": "X-API-Key",
+                                                 "auth_value": "abc", "minimum_role": "agent"})
+    with app.app_context():
+        assert AIToolServer.query.filter_by(name="Custom").one().auth_mode == "header"
+    assert {k.lower(): v for k, v in fake_mcp.headers[0].items()}["x-api-key"] == "abc"

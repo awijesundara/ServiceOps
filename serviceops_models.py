@@ -3110,9 +3110,15 @@ class AIToolServer(db.Model):
     # Credential sent with every request (for example "Authorization: Bearer ..."). Encrypted at rest.
     auth_header = db.Column(db.String(80), nullable=False, default="Authorization")
     auth_encrypted = db.Column(db.Text, nullable=False, default="")
-    # "header": auth_encrypted is sent as-is in auth_header. "client_credentials": auth_encrypted is an OAuth
-    # client secret; ServiceOps obtains short-lived access tokens from token_url and sends them as Bearer tokens.
+    # How ServiceOps signs in, found by probing the server the standard way:
+    # "none" (no sign-in), "bearer" (auth_encrypted is an access token or API key sent as a Bearer token),
+    # "header" (advanced: auth_encrypted is sent as-is in auth_header), "oauth" (auth_encrypted is an OAuth client
+    # secret; access tokens come from the authorization server the MCP server advertises, RFC 9728/8414).
+    # "client_credentials" is the earlier name for "oauth".
     auth_mode = db.Column(db.String(20), nullable=False, default="header", server_default="header")
+    issuer = db.Column(db.String(500), nullable=False, default="", server_default="")
+    resource = db.Column(db.String(500), nullable=False, default="", server_default="")  # RFC 8707 resource indicator
+    token_url_manual = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     token_url = db.Column(db.String(500), nullable=False, default="", server_default="")
     client_id = db.Column(db.String(200), nullable=False, default="", server_default="")
     token_scope = db.Column(db.String(300), nullable=False, default="", server_default="")

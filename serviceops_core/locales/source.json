@@ -574,6 +574,9 @@
    "id": "Access level for directory users in no mapped group"
   },
   {
+   "id": "Access token or API key"
+  },
+  {
    "id": "Accessibility"
   },
   {
@@ -1040,6 +1043,9 @@
   },
   {
    "id": "Administrators only"
+  },
+  {
+   "id": "Advanced"
   },
   {
    "id": "Advanced JSON"
@@ -2883,9 +2889,6 @@
    "id": "Choose one of the listed roles."
   },
   {
-   "id": "Choose one of the listed sign-in methods."
-  },
-  {
    "id": "Choose only the activity this destination needs. Changes apply to future events."
   },
   {
@@ -3018,9 +3021,6 @@
   },
   {
    "id": "Client ID"
-  },
-  {
-   "id": "Client ID (OAuth)"
   },
   {
    "id": "Client contact"
@@ -3343,13 +3343,13 @@
    "id": "Conflicts flagged: {conflicts}."
   },
   {
+   "id": "Connect"
+  },
+  {
    "id": "Connect an MCP server"
   },
   {
    "id": "Connect and find models"
-  },
-  {
-   "id": "Connect and find tools"
   },
   {
    "id": "Connect directly (no proxy)"
@@ -3629,6 +3629,9 @@
    "javascript": true
   },
   {
+   "id": "Could not read the sign-in service's metadata at {issuer}."
+  },
+  {
    "id": "Could not read the tools of {name}: {reason}"
   },
   {
@@ -3887,12 +3890,6 @@
    "id": "Creates a saved draft only. Existing date spans or remaining estimates determine duration. Each assigned person is reserved for the full item duration; unassigned work has no capacity constraint. Completed and read-only work stays fixed. Dependencies use finish-to-start ordering. This is not an employee availability calendar."
   },
   {
-   "id": "Credential header"
-  },
-  {
-   "id": "Credential or client secret"
-  },
-  {
    "id": "Credentials are encrypted and are never shown again.",
    "javascript": true
   },
@@ -3977,6 +3974,9 @@
   },
   {
    "id": "Custom browser push notification proxy (HTTP/HTTPS, used only when the mode above is custom)"
+  },
+  {
+   "id": "Custom credential header"
   },
   {
    "id": "Custom email delivery proxy (used only when the mode above is Custom)"
@@ -5010,6 +5010,9 @@
    "id": "Enter a valid Google Sheets URL."
   },
   {
+   "id": "Enter a valid OAuth client ID."
+  },
+  {
    "id": "Enter a valid absence start and end time."
   },
   {
@@ -5057,10 +5060,7 @@
    "id": "Enter the 6-digit code from your authenticator app, or one of your backup codes."
   },
   {
-   "id": "Enter the OAuth client ID."
-  },
-  {
-   "id": "Enter the OAuth client secret."
+   "id": "Enter the access token for this server."
   },
   {
    "id": "Enter the custom proxy URL."
@@ -5570,12 +5570,6 @@
    "id": "Fix versions"
   },
   {
-   "id": "Fixed credential"
-  },
-  {
-   "id": "Fixed credential header"
-  },
-  {
    "id": "Flag"
   },
   {
@@ -5622,7 +5616,7 @@
    "id": "For deployments without direct internet access to this provider."
   },
   {
-   "id": "For example: Bearer <token>"
+   "id": "For example X-API-Key"
   },
   {
    "id": "For example: My day"
@@ -7951,6 +7945,9 @@
    "id": "Navigation, tickets, requests, tasks, people, groups, knowledge, catalog, assets, integrations, enterprise work, and CMDB records."
   },
   {
+   "id": "Needs a token"
+  },
+  {
    "id": "Needs attention"
   },
   {
@@ -8363,9 +8360,6 @@
    "id": "No controlled change linked."
   },
   {
-   "id": "No credential"
-  },
-  {
    "id": "No custom fields defined yet."
   },
   {
@@ -8766,6 +8760,12 @@
    "id": "No sibling tasks on this record."
   },
   {
+   "id": "No sign-in"
+  },
+  {
+   "id": "No sign-in needed."
+  },
+  {
    "id": "No single directory entry matches {username}."
   },
   {
@@ -9162,13 +9162,13 @@
    "id": "Number or short description"
   },
   {
-   "id": "OAuth client credentials"
-  },
-  {
-   "id": "OAuth client credentials: ServiceOps gets short-lived access tokens from the token service with the client ID and secret below."
+   "id": "OAuth client ID"
   },
   {
    "id": "OAuth client {client}"
+  },
+  {
+   "id": "OAuth scope"
   },
   {
    "id": "ORGANIZATION"
@@ -9329,6 +9329,9 @@
   },
   {
    "id": "Only dead workflow jobs can be replayed."
+  },
+  {
+   "id": "Only for servers that do not follow the MCP sign-in standard, or when you already have the details."
   },
   {
    "id": "Only for “Chosen people”."
@@ -9636,9 +9639,6 @@
   },
   {
    "id": "Optional — shown to anyone blocked by this freeze"
-  },
-  {
-   "id": "Optional, for example rt:read:service"
   },
   {
    "id": "Optional. Transparent PNG recommended, maximum 5 MB."
@@ -11398,9 +11398,6 @@
    "javascript": true
   },
   {
-   "id": "Remote MCP servers only (Streamable HTTP). A server on your own network must be allowlisted by the deployment operator in AI_MCP_PRIVATE_ENDPOINTS."
-  },
-  {
    "id": "Remove",
    "javascript": true
   },
@@ -11464,7 +11461,7 @@
    "id": "Remove the saved value"
   },
   {
-   "id": "Remove the stored credential"
+   "id": "Remove the stored secret"
   },
   {
    "id": "Remove the system default proxy"
@@ -12603,9 +12600,6 @@
    "id": "Saved {changed} permission change(s)."
   },
   {
-   "id": "Saved {name}."
-  },
-  {
    "id": "Saved — leave blank to keep it"
   },
   {
@@ -12697,9 +12691,6 @@
   },
   {
    "id": "Schedules and target durations by priority"
-  },
-  {
-   "id": "Scope (OAuth)"
   },
   {
    "id": "Scopes"
@@ -12866,6 +12857,9 @@
   },
   {
    "id": "Secret"
+  },
+  {
+   "id": "Secret, token or API key"
   },
   {
    "id": "Secrets are encrypted"
@@ -13175,6 +13169,9 @@
    "id": "Sends a controlled manual event for the selected ticket. Only rules explicitly configured to accept manual runs can respond."
   },
   {
+   "id": "Sends the secret in this header instead of discovering the sign-in method."
+  },
+  {
    "id": "Sensitive ({reasons}). Stays on your own AI: {names}.",
    "javascript": true
   },
@@ -13358,6 +13355,9 @@
   },
   {
    "id": "ServiceOps REST API reference"
+  },
+  {
+   "id": "ServiceOps asks the server how to sign in and only asks you for what it cannot discover."
   },
   {
    "id": "ServiceOps groups"
@@ -13613,6 +13613,15 @@
   },
   {
    "id": "Signing secret"
+  },
+  {
+   "id": "Signs in with OAuth through {issuer}."
+  },
+  {
+   "id": "Signs in with an access token or API key."
+  },
+  {
+   "id": "Signs in with the custom header {header}."
   },
   {
    "id": "Similar open incidents"
@@ -14091,7 +14100,7 @@
    "id": "Storage backend"
   },
   {
-   "id": "Stored encrypted and never shown again. Changing the address, header, sign-in method, token address or client ID removes it."
+   "id": "Stored encrypted and never shown again."
   },
   {
    "id": "Stories and all descendants",
@@ -14694,6 +14703,9 @@
    "javascript": true
   },
   {
+   "id": "The client registered for ServiceOps with that sign-in service."
+  },
+  {
    "id": "The component limit has been reached.",
    "javascript": true
   },
@@ -14982,6 +14994,9 @@
    "id": "The server returned HTTP {status}."
   },
   {
+   "id": "The server returned HTTP {status}. Check the MCP address."
+  },
+  {
    "id": "The server sent an invalid answer."
   },
   {
@@ -14995,6 +15010,12 @@
   },
   {
    "id": "The server's credential could not be decrypted. Enter it again."
+  },
+  {
+   "id": "The server's sign-in metadata is for a different address ({resource}). Connect using that address."
+  },
+  {
+   "id": "The server's sign-in service ({issuer}) does not offer the client-credentials grant that ServiceOps needs for unattended access."
   },
   {
    "id": "The service could not be saved. Please try again."
@@ -15506,10 +15527,13 @@
    "id": "Token (shown once)"
   },
   {
-   "id": "Token address (OAuth)"
+   "id": "Token address override"
   },
   {
    "id": "Token issued for one monitoring source."
+  },
+  {
+   "id": "Token stored"
   },
   {
    "id": "Tokens per minute"
@@ -16015,6 +16039,9 @@
   },
   {
    "id": "Use a date between 1900 and 2200 in YYYY-MM-DD format."
+  },
+  {
+   "id": "Use a different address for the discovered token endpoint, for example inside your network."
   },
   {
    "id": "Use a proxy for this model"
@@ -17429,9 +17456,6 @@
    "id": "https://docs.google.com/spreadsheets/d/…"
   },
   {
-   "id": "https://login.example.com/realms/company/protocol/openid-connect/token"
-  },
-  {
    "id": "https://servicedesk.example.com"
   },
   {
@@ -18684,6 +18708,9 @@
    "id": "{name} must be between {low} and {high}."
   },
   {
+   "id": "{name} needs an access token or API key. Enter it, then save."
+  },
+  {
    "id": "{name} now opens first."
   },
   {
@@ -18700,6 +18727,9 @@
   },
   {
    "id": "{name} shared {key} with you"
+  },
+  {
+   "id": "{name} signs in through {issuer}. Enter the client ID and secret registered for ServiceOps there, then save."
   },
   {
    "id": "{name} unlinked from {name2}."

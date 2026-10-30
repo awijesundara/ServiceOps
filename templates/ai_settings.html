@@ -111,7 +111,7 @@
       <p class="muted">{{ tr('Let the chat assistant look things up in other systems through their MCP servers. Only remote servers are supported. Data from a tool is not filtered by ServiceOps permissions, so choose who may use each server.') }}</p></div></div>
     {% if config and not config.tools_enabled %}<p class="ai-banner">{{ tr('Connected tools are switched off. Turn on "Let the chat assistant use connected tools" under Who can use it.') }}</p>{% endif %}
     {% for server in tool_servers %}
-    <article class="aiadm-tool-server">
+    <article class="aiadm-tool-server" id="server-{{ server.id }}">
       <header class="aiadm-tool-server-head">
         <div>
           <h3>{{ server.name }}</h3>
@@ -121,7 +121,7 @@
             {% elif server.last_ok %}<span class="ai-pill" data-state="completed">{{ tr('Working') }}</span>
             {% elif server.last_ok is not none %}<span class="ai-pill" data-state="failed">{{ tr('Not reachable') }}</span>
             {% else %}<span class="ai-pill" data-state="queued">{{ tr('Not checked yet') }}</span>{% endif %}
-            {{ tr('OAuth client {client}', client=server.client_id) if server.auth_mode == 'client_credentials' else (tr('Fixed credential') if server.auth_encrypted else tr('No credential')) }} ·
+            {{ tr('OAuth client {client}', client=server.client_id or '?') if server.auth_mode in ('oauth', 'client_credentials') else (tr('No sign-in') if server.auth_mode == 'none' else (tr('Token stored') if server.auth_encrypted else tr('Needs a token'))) }} ·
             {{ tr('For {role} and above', role=tr(server.minimum_role)) }} ·
             {{ tr('Results may go to outside AI services') if server.share_external else tr('Results stay on your own AI') }}
             {% if server.last_error %}· {{ server.last_error }}{% endif %}
@@ -156,7 +156,7 @@
         </tbody>
       </table>
       {% else %}<p class="muted">{{ tr('No tools discovered yet. Use Refresh tools.') }}</p>{% endif %}
-      <details class="aiadm-tool-edit"><summary>{{ tr('Edit {name}', name=server.name) }}</summary>
+      <details class="aiadm-tool-edit"{% if (server.auth_mode in ('oauth', 'client_credentials') and not (server.client_id and server.auth_encrypted)) or (server.auth_mode in ('bearer', 'header') and not server.auth_encrypted) %} open{% endif %}><summary>{{ tr('Edit {name}', name=server.name) }}</summary>
         {% with server=server %}{% include '_ai_tool_server_form.html' %}{% endwith %}
       </details>
     </article>

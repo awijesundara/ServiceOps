@@ -43,73 +43,91 @@ def add_routes(blueprint):
     @roles("admin")
     @require_action("administer")
     def tool_server_save():
+        """Connect or edit a server. Only the name and MCP address are always needed: how to sign in is found from
+        the server itself (MCP authorization: RFC 9728 resource metadata, RFC 8414/OIDC discovery), and the form
+        then asks only for what cannot be discovered: an OAuth client ID and secret, or an access token."""
         service.actor(current_user)
-        server_id = request.form.get("server_id", "").strip()
+        form = request.form
+        server_id = form.get("server_id", "").strip()
         server = owned_server(server_id) if server_id else None
-        name = " ".join(request.form.get("name", "").split())[:80]
-        header = request.form.get("auth_header", "").strip() or mcp.DEFAULT_AUTH_HEADER
-        role = request.form.get("minimum_role", "agent")
-        secret = request.form.get("auth_value", "").strip()
-        mode = request.form.get("auth_mode", "header")
-        token_url, client_id = "", ""
-        token_scope = " ".join(request.form.get("token_scope", "").split())[:300]
+        name = " ".join(form.get("name", "").split())[:80]
+        role = form.get("minimum_role", server.minimum_role if server else "agent")
+        secret = form.get("auth_value", "").strip()
+        custom_header = form.get("auth_header", "").strip()
+        manual_token_url = form.get("token_url", "").strip()
+        token_scope = " ".join(form.get("token_scope", "").split())[:300]
+        client_id = form.get("client_id", "").strip()
         try:
-            if mode not in mcp.AUTH_MODES:
-                raise mcp.McpError(tr("Choose one of the listed sign-in methods."))
-            if mode == "client_credentials":
-                client_id = request.form.get("client_id", "").strip()
-                if not client_id or len(client_id) > 200 or not all(33 <= ord(ch) <= 126 for ch in client_id):
-                    raise mcp.McpError(tr("Enter the OAuth client ID."))
-                if any(not 33 <= ord(ch) <= 126 for ch in token_scope.replace(" ", "")):
-                    raise mcp.McpError(tr("The scope may contain only visible characters and spaces."))
-                token_url = mcp.check_destination(request.form.get("token_url", ""))[0]
-                if not secret and not (server and server.auth_mode == "client_credentials" and server.auth_encrypted):
-                    raise mcp.McpError(tr("Enter the OAuth client secret."))
             if not name:
                 raise mcp.McpError(tr("Enter a name for the server."))
             if role not in mcp.TOOL_ROLES:
                 raise mcp.McpError(tr("Choose one of the listed roles."))
-            if not mcp._HEADER_NAME.fullmatch(header):
+            if custom_header and not mcp._HEADER_NAME.fullmatch(custom_header):
                 raise mcp.McpError(tr("The credential header name may contain only letters, digits and hyphens."))
             if len(secret) > 4000:
                 raise mcp.McpError(tr("The credential is too long."))
-            url = mcp.check_destination(request.form.get("url", ""))[0]
+            if client_id and (len(client_id) > 200 or not all(33 <= ord(ch) <= 126 for ch in client_id)):
+                raise mcp.McpError(tr("Enter a valid OAuth client ID."))
+            if any(not 33 <= ord(ch) <= 126 for ch in token_scope.replace(" ", "")):
+                raise mcp.McpError(tr("The scope may contain only visible characters and spaces."))
+            url = mcp.check_destination(form.get("url", ""))[0]
             clash = AIToolServer.query.filter(AIToolServer.tenant_id == current_user.tenant_id, AIToolServer.name == name,
                                               AIToolServer.id != (server.id if server else "")).first()
             if clash:
                 raise mcp.McpError(tr("Another server already uses this name."))
+            if custom_header:  # advanced: a fixed header the server documents, no discovery
+                found = {"method": "header"}
+            else:
+                found = mcp.probe(url)
+                if found["method"] == "oauth" and manual_token_url:
+                    found["token_url"] = mcp.check_destination(manual_token_url)[0]
         except mcp.McpError as error:
             flash(str(error), "error")
             return back()
+        method = found["method"]
         creating = server is None
         if creating:
             server = AIToolServer(tenant_id=current_user.tenant_id, url=url)
             db.session.add(server)
-        moved = not creating and (server.url != url or server.auth_header != header or server.auth_mode != mode
-                                  or server.token_url != token_url or server.client_id != client_id)
+        previous = None if creating else (server.url, server.auth_mode if server.auth_mode != "client_credentials" else "oauth",
+                                          server.auth_header, server.issuer, server.client_id)
+        current = (url, method, custom_header or mcp.DEFAULT_AUTH_HEADER, found.get("issuer", ""),
+                   client_id if method == "oauth" else "")
+        moved = previous is not None and previous != current
         if moved:
-            # A credential belongs to one destination, and a different server may offer different tools.
+            # A credential belongs to one destination and sign-in method; another server may offer other tools.
             server.auth_encrypted = ""
             for tool in server.tools:
                 tool.enabled = False
-        server.name, server.url, server.auth_header, server.minimum_role = name, url, header, role
-        server.auth_mode, server.token_url, server.client_id, server.token_scope = mode, token_url, client_id, token_scope
-        server.share_external = request.form.get("share_external") == "on"
-        server.enabled = request.form.get("enabled", "on") == "on"
-        if secret:
-            server.auth_encrypted = mcp.encrypt_credential(secret)
-        elif request.form.get("clear_auth") == "on":
+        server.name, server.url, server.minimum_role, server.auth_mode = name, url, role, method
+        server.auth_header = custom_header or mcp.DEFAULT_AUTH_HEADER
+        server.issuer, server.resource = found.get("issuer", ""), found.get("resource", "")
+        server.token_url, server.token_url_manual = found.get("token_url", ""), bool(manual_token_url and method == "oauth")
+        server.client_id = client_id if method == "oauth" else ""
+        server.token_scope = token_scope if method == "oauth" else ""
+        server.share_external = form.get("share_external") == "on"
+        server.enabled = form.get("enabled", "on") == "on"
+        if method == "none":
+            server.auth_encrypted = ""
+        elif secret:
+            server.auth_encrypted = mcp.encrypt_credential(secret[7:].strip() if method == "bearer" and secret.lower().startswith("bearer ") else secret)
+        elif form.get("clear_auth") == "on":
             server.auth_encrypted = ""
         db.session.flush()
         mcp.forget_token(server.id)
         audit("ai tool server created" if creating else "ai tool server updated", f"Connected tools: {server.name}",
-              f"url={url}; sign_in={mode}; client={client_id or '-'}; role={role}; share_external={server.share_external}; enabled={server.enabled}; "
-              f"credential={'set' if server.auth_encrypted else 'none'}" + ("; tools disabled after the address changed" if moved else ""))
+              f"url={url}; sign_in={method}; issuer={server.issuer or '-'}; client={server.client_id or '-'}; role={role}; "
+              f"share_external={server.share_external}; enabled={server.enabled}; "
+              f"credential={'set' if server.auth_encrypted else 'none'}" + ("; tools disabled after the sign-in changed" if moved else ""))
         db.session.commit()
-        if creating or moved:
-            discover(server)
-        else:
-            flash(tr("Saved {name}.", name=server.name), "success")
+        needs = {"oauth": not (server.client_id and server.auth_encrypted), "bearer": not server.auth_encrypted,
+                 "header": not server.auth_encrypted}.get(method, False)
+        if needs:
+            flash(tr("{name} signs in through {issuer}. Enter the client ID and secret registered for ServiceOps there, "
+                     "then save.", name=server.name, issuer=server.issuer) if method == "oauth" else
+                  tr("{name} needs an access token or API key. Enter it, then save.", name=server.name), "success")
+            return redirect(url_for("ai.settings") + f"#server-{server.id}")
+        discover(server)
         return back()
 
     @blueprint.route("/admin/ai/tools/servers/<server_id>/discover", methods=["POST"])

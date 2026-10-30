@@ -61,7 +61,8 @@ class CredentialRejected(McpError):
     """The server refused the credential (HTTP 401/403); an OAuth token may be refreshed once."""
 
 
-AUTH_MODES = ("header", "client_credentials")
+AUTH_MODES = ("none", "bearer", "header", "oauth")
+OAUTH_MODES = ("oauth", "client_credentials")  # "client_credentials" is the earlier name for "oauth"
 TOKEN_BYTES = 64 * 1024
 _tokens = {}  # server id -> (fingerprint, access token, monotonic expiry); process-local, never stored
 _tokens_lock = threading.Lock()
@@ -112,6 +113,110 @@ def credential(server):
         raise McpError(tr("The server's credential could not be decrypted. Enter it again.")) from None
 
 
+# --------------------------------------------------------------------------- standard sign-in discovery
+
+def _get_json(url):
+    """A bounded, destination-checked GET of a small JSON document. Returns (status, document or None)."""
+    url, hostname, infos = check_destination(url)
+    started = time.monotonic()
+    try:
+        with requests.Session() as http:
+            http.trust_env = False
+            with pin_resolved_addresses(hostname, infos) if hostname else nullcontext():
+                with http.get(url, headers={"Accept": "application/json"}, timeout=(5, 10), allow_redirects=False,
+                              stream=True) as response:
+                    if response.status_code != 200:
+                        return response.status_code, None
+                    body = bytearray()
+                    for chunk in response.iter_content(8192):
+                        body.extend(chunk)
+                        if len(body) > TOKEN_BYTES or time.monotonic() - started > 10:
+                            return 413, None
+        data = json.loads(body)
+        return 200, data if isinstance(data, dict) else None
+    except (requests.RequestException, OSError, ValueError):
+        return 0, None
+
+
+def _canonical(url):
+    parts = urlsplit(url)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    return f"{parts.scheme.lower()}://{(parts.hostname or '').lower()}:{port}{parts.path.rstrip('/')}"
+
+
+def protected_resource_metadata(url, challenge=""):
+    """RFC 9728: from the WWW-Authenticate hint, else the well-known locations for the MCP address."""
+    parts = urlsplit(url)
+    origin, path = f"{parts.scheme}://{parts.netloc}", parts.path.rstrip("/")
+    hint = re.search(r'resource_metadata="([^"]{1,500})"', challenge or "")
+    candidates = ([hint.group(1)] if hint else []) + [origin + "/.well-known/oauth-protected-resource" + path,
+                                                    origin + "/.well-known/oauth-protected-resource"]
+    for candidate in dict.fromkeys(candidates):
+        try:
+            status, data = _get_json(candidate)
+        except McpError:
+            continue
+        if status != 200 or not data or not isinstance(data.get("authorization_servers"), list) \
+                or not data["authorization_servers"] or not isinstance(data["authorization_servers"][0], str):
+            continue
+        resource = data.get("resource")
+        if isinstance(resource, str) and _canonical(resource) != _canonical(url):
+            raise McpError(tr("The server's sign-in metadata is for a different address ({resource}). Connect using "
+                              "that address.", resource=resource[:200]))
+        return data
+    return None
+
+
+def authorization_server_metadata(issuer):
+    """RFC 8414, falling back to OpenID Connect discovery (both path forms), as the MCP specification allows."""
+    parts = urlsplit(issuer)
+    origin, path = f"{parts.scheme}://{parts.netloc}", parts.path.rstrip("/")
+    for candidate in dict.fromkeys((origin + "/.well-known/oauth-authorization-server" + path,
+                                    origin + "/.well-known/openid-configuration" + path,
+                                    issuer.rstrip("/") + "/.well-known/openid-configuration")):
+        status, data = _get_json(candidate)
+        if status == 200 and data and str(data.get("issuer", "")).rstrip("/") == issuer.rstrip("/") \
+                and isinstance(data.get("token_endpoint"), str):
+            return data
+    raise McpError(tr("Could not read the sign-in service's metadata at {issuer}.", issuer=issuer[:200]))
+
+
+def probe(url):
+    """How the server at `url` expects ServiceOps to sign in, found the standard way.
+
+    Returns {"method": "none"} when an unauthenticated initialize succeeds; {"method": "oauth", "issuer", "token_url",
+    "resource", "scopes"} when the server advertises an OAuth authorization server; otherwise {"method": "bearer"}
+    (an access token or API key is needed)."""
+    url, hostname, infos = check_destination(url)
+    message = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+               "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}, "clientInfo": {"name": "ServiceOps", "version": "probe"}}}
+    try:
+        with requests.Session() as http:
+            http.trust_env = False
+            with pin_resolved_addresses(hostname, infos) if hostname else nullcontext():
+                with http.post(url, data=json.dumps(message), timeout=(5, REQUEST_SECONDS), allow_redirects=False, stream=True,
+                               headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}) as response:
+                    status, challenge = response.status_code, response.headers.get("WWW-Authenticate", "")
+    except (requests.RequestException, OSError):
+        raise McpError(tr("The server could not be reached.")) from None
+    if status == 200:
+        return {"method": "none"}
+    if status not in (401, 403):
+        raise McpError(tr("The server returned HTTP {status}. Check the MCP address.", status=status))
+    metadata = protected_resource_metadata(url, challenge)
+    if not metadata:
+        return {"method": "bearer"}
+    issuer = metadata["authorization_servers"][0]
+    server_metadata = authorization_server_metadata(issuer)
+    grants = server_metadata.get("grant_types_supported")
+    if isinstance(grants, list) and "client_credentials" not in grants:
+        raise McpError(tr("The server's sign-in service ({issuer}) does not offer the client-credentials grant that "
+                          "ServiceOps needs for unattended access.", issuer=issuer[:200]))
+    scopes = metadata.get("scopes_supported") if isinstance(metadata.get("scopes_supported"), list) else []
+    return {"method": "oauth", "issuer": issuer[:500], "token_url": server_metadata["token_endpoint"][:500],
+            "resource": str(metadata.get("resource") or url)[:500], "scopes": [str(x)[:100] for x in scopes][:20]}
+
+
 def forget_token(server_id):
     with _tokens_lock:
         _tokens.pop(server_id, None)
@@ -123,11 +228,12 @@ def access_token(server, *, refresh=False):
     The token URL and client ID are read back from the saved server record and checked with the same destination
     rules as MCP servers. Tokens are cached in memory until shortly before they expire, and never stored."""
     row = db.session.query(AIToolServer.token_url, AIToolServer.client_id, AIToolServer.token_scope,
-                           AIToolServer.auth_encrypted).filter(AIToolServer.id == server.id,
+                           AIToolServer.auth_encrypted, AIToolServer.resource).filter(AIToolServer.id == server.id,
                                                                AIToolServer.tenant_id == server.tenant_id).first()
     if not row or not row.token_url or not row.client_id or not row.auth_encrypted:
         raise McpError(tr("Enter the token address, client ID and client secret for this server."))
-    fingerprint = hashlib.sha256("|".join((row.token_url, row.client_id, row.token_scope, row.auth_encrypted)).encode()).hexdigest()
+    fingerprint = hashlib.sha256("|".join((row.token_url, row.client_id, row.token_scope, row.auth_encrypted,
+                                           row.resource)).encode()).hexdigest()
     with _tokens_lock:
         cached = _tokens.get(server.id)
         if cached and not refresh and cached[0] == fingerprint and cached[2] > time.monotonic():
@@ -136,6 +242,8 @@ def access_token(server, *, refresh=False):
     form = {"grant_type": "client_credentials"}
     if row.token_scope:
         form["scope"] = row.token_scope
+    if row.resource:
+        form["resource"] = row.resource  # RFC 8707, as the MCP authorization specification requires
     started = time.monotonic()
     try:
         with requests.Session() as http:
@@ -190,10 +298,17 @@ class Session:
         self.session_id = None
         self.negotiated = None
         self._next_id = 0
-        self.oauth = server.auth_mode == "client_credentials"
+        self.oauth = server.auth_mode in OAUTH_MODES
         self.headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
         if self.oauth:
             self.headers["Authorization"] = "Bearer " + access_token(server)
+        elif server.auth_mode == "none":
+            pass
+        elif server.auth_mode == "bearer":
+            token = credential(server)
+            if not token:
+                raise McpError(tr("Enter the access token for this server."))
+            self.headers["Authorization"] = "Bearer " + token
         else:
             header = server.auth_header or DEFAULT_AUTH_HEADER
             if not _HEADER_NAME.fullmatch(header):
@@ -363,6 +478,8 @@ def discover(server):
     """Refresh the server's tool list. New tools start disabled; a tool that disappeared is removed; a tool that
     became destructive, or whose input changed, is disabled again so the administrator reviews it."""
     try:
+        if server.auth_mode in OAUTH_MODES and not server.token_url_manual:
+            refresh_sign_in(server)
         with Session(server) as session:
             listed = session.list_tools()
             server.server_info = session.server_info
@@ -395,6 +512,17 @@ def discover(server):
             db.session.delete(tool)
     server.last_ok, server.last_checked_at, server.last_error = True, now(), ""
     return len(seen), skipped
+
+
+def refresh_sign_in(server):
+    """Follow the server's own metadata when it moves its sign-in service (standard discovery, not a stored guess)."""
+    found = probe(server.url)
+    if found["method"] == "oauth":
+        changed = (server.issuer, server.token_url, server.resource) != (found["issuer"], found["token_url"], found["resource"])
+        server.issuer, server.token_url, server.resource = found["issuer"], found["token_url"], found["resource"]
+        if changed:
+            db.session.flush()
+            forget_token(server.id)
 
 
 def may_enable(tool, confirmed):
