@@ -111,7 +111,13 @@ class Session:
 
     def __init__(self, server, *, seconds=REQUEST_SECONDS):
         self.server = server
-        self.url = normalize_url(server.url)
+        # The address is read back from the saved server record, which was validated when an administrator saved
+        # it, rather than taken from whatever object the caller holds; every request re-checks it as well.
+        stored = db.session.query(AIToolServer.url).filter(AIToolServer.id == server.id,
+                                                            AIToolServer.tenant_id == server.tenant_id).scalar()
+        if not stored:
+            raise McpError(tr("Save the server before connecting to it."))
+        self.url = normalize_url(stored)
         self.seconds = seconds
         self.session_id = None
         self.negotiated = None
