@@ -205,6 +205,7 @@ def register(app):
                 config.routing_mode, config.external_scope = mode, scope
                 if "routing_mode" in request.form:  # the full settings form; older clients leave these untouched
                     config.memory_enabled = request.form.get("memory_enabled") == "on"
+                    config.tools_enabled = request.form.get("tools_enabled") == "on"
                     for flag in ("detect_personal", "detect_credentials", "detect_financial"):
                         setattr(config, flag, request.form.get(flag) == "on")
                 if "sensitive_terms" in request.form:
@@ -233,7 +234,7 @@ def register(app):
                 service.cancel_active(current_user.tenant_id)
                 audit("ai configured", "AI configuration",
                       f"enabled={config.enabled}; incidents={config.incident_enabled}; chat={config.chat_enabled}; "
-                      f"actions={config.actions_enabled}; "
+                      f"actions={config.actions_enabled}; tools={config.tools_enabled}; "
                       f"routing={config.routing_mode}; external={config.external_scope}; revision={config.revision}")
                 db.session.commit()
                 flash(tr("Saved. Requests waiting or being answered were cancelled so the new settings apply cleanly."), "success")
@@ -245,9 +246,13 @@ def register(app):
         counts = routing.running_counts(current_user.tenant_id)
         per_service, today = routing.usage_today(current_user.tenant_id)
         calls = quota.recent_calls(current_user.tenant_id)
+        from serviceops_core.ai import mcp
+        from serviceops_core.ai.tool_routes import servers_for
         return render_template("ai_settings.html", config=config, ipfs=ipfs_enabled(), modes=routing.ROUTING_MODES,
                                services=[service_payload(r, counts, per_service, calls) for r in rows],
-                               today=today, daily_limit=config.daily_limit if config else 100)
+                               today=today, daily_limit=config.daily_limit if config else 100,
+                               tool_servers=servers_for(current_user.tenant_id), tool_roles=mcp.TOOL_ROLES,
+                               default_auth_header=mcp.DEFAULT_AUTH_HEADER)
 
     @blueprint.route("/admin/ai/services", methods=["POST"])
     @roles("admin")
@@ -960,6 +965,8 @@ def register(app):
         return no_store({"run_id": run.id, "conversation_id": conversation.id, "message_id": reply.id}, 201)
 
 
+    from serviceops_core.ai.tool_routes import add_routes
+    add_routes(blueprint)
     app.register_blueprint(blueprint)
     app.jinja_env.globals["ai_available"] = service.available
     app.jinja_env.globals["ai_can_investigate"] = service.can_investigate

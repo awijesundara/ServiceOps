@@ -34,6 +34,7 @@ REASON_TEXT = {
     "customer_content": "customer support content",
     "service_request_content": "service request details",
     "restricted_record": "a restricted operational record",
+    "connected_tool": "data from a connected tool that stays private",
 }
 
 _CARD = re.compile(r"(?<![\d.])(?:\d[ -]?){12,18}\d(?![\d.])")

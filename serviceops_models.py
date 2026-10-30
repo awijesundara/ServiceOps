@@ -3046,6 +3046,8 @@ class AIConfiguration(db.Model):
     detect_financial = db.Column(db.Boolean, nullable=False, default=True)
     # Whether the chat assistant may keep short notes a person explicitly asks it to remember.
     memory_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    # Whether the chat assistant may call tools on connected MCP servers. Off until an administrator turns it on.
+    tools_enabled = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     sensitive_terms = db.Column(db.Text, nullable=False, default="")
     # Administrator regular expressions, one per line: text matching a sensitive
     # pattern stays private; text matching a safe pattern is not treated as sensitive.
@@ -3092,6 +3094,54 @@ class AIConnection(db.Model):
     def external(self):
         """A hosted provider sends data outside the organization; a server on its network does not."""
         return self.provider != "self_hosted"
+
+
+class AIToolServer(db.Model):
+    """A remote MCP server (Streamable HTTP) whose tools the chat assistant may call.
+
+    Only remote servers are supported: a local (stdio) server would let a web setting start programs on the
+    ServiceOps host. Tools are discovered from the server and stay off until an administrator enables each one."""
+    __tablename__ = "ai_tool_server"
+    __table_args__ = (db.UniqueConstraint("tenant_id", "name", name="uq_ai_tool_server_name"),)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    name = db.Column(db.String(80), nullable=False)
+    url = db.Column(db.String(500), nullable=False)
+    # Credential sent with every request (for example "Authorization: Bearer ..."). Encrypted at rest.
+    auth_header = db.Column(db.String(80), nullable=False, default="Authorization")
+    auth_encrypted = db.Column(db.Text, nullable=False, default="")
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    # Lowest role whose chats may use this server's tools. Its data is not filtered by ServiceOps permissions.
+    minimum_role = db.Column(db.String(20), nullable=False, default="agent")
+    # Whether results from this server may be sent to an external (hosted) AI service. Off: answers that used
+    # them stay on the organization's own AI.
+    share_external = db.Column(db.Boolean, nullable=False, default=False)
+    server_info = db.Column(db.String(200), nullable=False, default="")
+    last_ok = db.Column(db.Boolean)
+    last_checked_at = db.Column(db.DateTime(timezone=True))
+    last_error = db.Column(db.String(300), nullable=False, default="")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+    tools = db.relationship("AITool", backref="server", cascade="all, delete-orphan", passive_deletes=True,
+                            order_by="AITool.name")
+
+
+class AITool(db.Model):
+    """One tool a connected MCP server offers, as last discovered."""
+    __tablename__ = "ai_tool"
+    __table_args__ = (db.UniqueConstraint("server_id", "name", name="uq_ai_tool_name"),)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    server_id = db.Column(db.String(36), db.ForeignKey("ai_tool_server.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(128), nullable=False)
+    title = db.Column(db.String(200), nullable=False, default="")
+    description = db.Column(db.Text, nullable=False, default="")
+    input_schema_json = db.Column(db.Text, nullable=False, default="{}")
+    # The server's own hints. A tool it marks destructive can never be enabled.
+    read_only = db.Column(db.Boolean)
+    destructive = db.Column(db.Boolean)
+    enabled = db.Column(db.Boolean, nullable=False, default=False)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=now, onupdate=now)
 
 
 class AICall(db.Model):
@@ -3216,7 +3266,7 @@ class AIAction(db.Model):
     __table_args__ = (db.UniqueConstraint("run_id", "action_type", name="uq_ai_action_run_type"),)
 
 
-__all__ += ["AIConfiguration", "AIConnection", "AICall", "AIMemory", "AIRun", "AIConversation", "AIMessage", "AIAction"]
+__all__ += ["AIConfiguration", "AIConnection", "AIToolServer", "AITool", "AICall", "AIMemory", "AIRun", "AIConversation", "AIMessage", "AIAction"]
 
 
 # ---------------------------------------------------------------- IT asset management

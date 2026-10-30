@@ -12,7 +12,7 @@ from sqlalchemy import or_
 
 from serviceops_models import (AICall, AIConfiguration, AIConnection, AIConversation, AIMemory, AIMessage, AIRun, Comment, ConfigurationItem, Knowledge,
                               TaskCI, Tenant, Ticket, User, db, now, settings_cipher)
-from serviceops_core.ai import access, memory, quota, routing
+from serviceops_core.ai import access, mcp, memory, quota, routing
 from serviceops_core.ai.provider import INSTRUCTIONS, ProviderError, StreamCancelled, generate_stream, provider_timeout
 from serviceops_core import read_access
 from serviceops_core.security import mask_pii, redact
@@ -255,6 +255,8 @@ class Prepared:
     reply: str = ""  # a fixed answer that needs no model (for example confirming a saved note)
     audit: tuple = ()
     identity_terms: tuple = ()  # the asker's name, username and email: withheld from external services
+    question: str = ""  # the chat question and replayable history, for deciding whether connected tools would help
+    history: tuple = ()
 
 
 def identity_terms(user):
@@ -364,7 +366,59 @@ def _prepare_chat(run, user, config, steps):
     _run_options(run)
     # Chat replies are fast: the model is asked not to spend time on a long reasoning pass.
     return Prepared(messages, evidence.sources, grounded, tuple(access.record_numbers(question)), False, False,
-                    reasons=reasons, kinds=evidence.kinds, identity_terms=identity_terms(user))
+                    reasons=reasons, kinds=evidence.kinds, identity_terms=identity_terms(user), question=question,
+                    history=tuple(history))
+
+
+PLANNING_TOKENS = 400
+
+
+def _use_connected_tools(run, user, config, prepared, steps):
+    """Ask the model which enabled connected tools (MCP) would help, call them, and add their results.
+
+    The planning request follows the same privacy routing as the answer. Tool results that are not shareable add a
+    privacy reason, so the answer is then routed to the organization's own AI. Any failure leaves the answer to
+    continue without tools."""
+    scope = access.build_scope(user, run.actor_role)
+    tools = mcp.usable_tools(scope, config)
+    if not tools or not prepared.question:
+        return prepared
+    services = connections_for(config)
+    messages = mcp.planner_messages(prepared.question, prepared.history, tools)
+    estimate = quota.estimate_tokens(messages)
+    calls = quota.recent_calls(run.tenant_id)
+    chosen = routing.plan(config, services, prepared.reasons, prepared.kinds, routing.running_counts(run.tenant_id),
+                          headroom={c.id: quota.headroom(c, calls, estimate) for c in services}, prefer="economy",
+                          prefer_connection_id=run.preferred_connection_id)
+    if not chosen.candidates:
+        return prepared
+    connection = chosen.candidates[0]
+    if connection.external:
+        messages = withhold_identity(messages, prepared.identity_terms)
+    steps.add("Checked connected tools", tr("{count} available", count=len(tools)))
+    _publish_progress(run.id, steps_json=steps.dump())
+    db.session.commit()  # no transaction is held open across the network calls
+    call_id = quota.open_call(run.tenant_id, connection.id, estimate) if connection.id != "legacy" else None
+    try:
+        plan_text, _reasoning, usage = generate_stream(_snapshot(config, connection), messages, lambda kind, text: True,
+                                                       thinking=False, max_tokens=PLANNING_TOKENS)
+    except ProviderError as failure:
+        if call_id:
+            quota.close_call(call_id, "limited" if getattr(failure, "status", 0) == 429 else "failed")
+        steps.add("Answered without connected tools", "The model could not plan which tools to use")
+        return prepared
+    if call_id:
+        quota.close_call(call_id, "ok", usage)
+    planned, refused = mcp.parse_plan(plan_text, tools)
+    if not planned:
+        steps.add("No connected tool needed" if not refused else "Answered without connected tools",
+                  "" if not refused else "The planned tool calls did not match the tools' inputs")
+        return prepared
+    results, reasons = mcp.run_calls(planned, scope, config)
+    db.session.commit()
+    steps.add("Used connected tools", mcp.describe(results))
+    prepared = mcp.add_results(prepared, results)
+    return replace(prepared, reasons=set(prepared.reasons) | reasons)
 
 
 def _stable_prefix(text):
@@ -596,6 +650,8 @@ def process_one():
         if prepared.refusal or prepared.reply:
             _decline(run_id, prepared, steps)
             return True
+        if run.kind == "chat":
+            prepared = _use_connected_tools(run, user, config, prepared, steps)
         services = connections_for(config)
         estimate = quota.estimate_tokens(prepared.messages)
         calls = quota.recent_calls(run.tenant_id)

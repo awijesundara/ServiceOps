@@ -41,6 +41,9 @@
    "id": "(no matching user)"
   },
   {
+   "id": "(no text in the result)"
+  },
+  {
    "id": "(nobody chosen)"
   },
   {
@@ -48,6 +51,9 @@
   },
   {
    "id": "(shared)"
+  },
+  {
+   "id": "(unavailable: {tools})"
   },
   {
    "id": "(used when Mode is Incoming webhook)"
@@ -286,6 +292,9 @@
   },
   {
    "id": "A schedule with that key already exists."
+  },
+  {
+   "id": "A server on the internet must use HTTPS. A server on your own network must be allowlisted by the deployment operator: add {origin} to AI_MCP_PRIVATE_ENDPOINTS (Helm ai.mcpPrivateEndpoints)."
   },
   {
    "id": "A service outage is in progress"
@@ -1324,6 +1333,9 @@
    "id": "Another AI service already uses that name."
   },
   {
+   "id": "Another server already uses this name."
+  },
+  {
    "id": "Answered in {seconds}s",
    "javascript": true
   },
@@ -2296,6 +2308,9 @@
    "id": "Cannot approve: this change's planned window falls inside the change freeze \"{title}\". Only Emergency changes can be approved during a freeze."
   },
   {
+   "id": "Cannot be enabled"
+  },
+  {
    "id": "Cannot delete {name}: {still_mounted} configuration item(s) are still mounted in it. Unassign them first."
   },
   {
@@ -2510,6 +2525,9 @@
   },
   {
    "id": "Changes apply to your account on every device."
+  },
+  {
+   "id": "Changes data"
   },
   {
    "id": "Changes saved."
@@ -2860,6 +2878,9 @@
   },
   {
    "id": "Choose one of the listed options."
+  },
+  {
+   "id": "Choose one of the listed roles."
   },
   {
    "id": "Choose only the activity this destination needs. Changes apply to future events."
@@ -3316,7 +3337,13 @@
    "id": "Conflicts flagged: {conflicts}."
   },
   {
+   "id": "Connect an MCP server"
+  },
+  {
    "id": "Connect and find models"
+  },
+  {
+   "id": "Connect and find tools"
   },
   {
    "id": "Connect directly (no proxy)"
@@ -3353,6 +3380,12 @@
   },
   {
    "id": "Connected to Snipe-IT"
+  },
+  {
+   "id": "Connected tools (MCP)"
+  },
+  {
+   "id": "Connected tools are switched off. Turn on \"Let the chat assistant use connected tools\" under Who can use it."
   },
   {
    "id": "Connected. Found {count} model.",
@@ -3588,6 +3621,9 @@
   {
    "id": "Could not reach the server. Try again.",
    "javascript": true
+  },
+  {
+   "id": "Could not read the tools of {name}: {reason}"
   },
   {
    "id": "Could not send a test notification.",
@@ -3845,6 +3881,12 @@
    "id": "Creates a saved draft only. Existing date spans or remaining estimates determine duration. Each assigned person is reserved for the full item duration; unassigned work has no capacity constraint. Completed and read-only work stays fixed. Dependencies use finish-to-start ordering. This is not an employee availability calendar."
   },
   {
+   "id": "Credential"
+  },
+  {
+   "id": "Credential header"
+  },
+  {
    "id": "Credentials are encrypted and are never shown again.",
    "javascript": true
   },
@@ -4055,6 +4097,9 @@
   },
   {
    "id": "Data classification reference, retention policy, legal holds, and regional data notes."
+  },
+  {
+   "id": "Data from this server is not filtered by ServiceOps permissions."
   },
   {
    "id": "Data from {label}"
@@ -4941,6 +4986,9 @@
    "id": "Enter a name and a lowercase, hyphen-safe slug."
   },
   {
+   "id": "Enter a name for the server."
+  },
+  {
    "id": "Enter a reply or internal note."
   },
   {
@@ -4987,6 +5035,9 @@
    "id": "Enter a valid number for {field}."
   },
   {
+   "id": "Enter a valid server address."
+  },
+  {
    "id": "Enter a valid syslog port."
   },
   {
@@ -5008,6 +5059,9 @@
   },
   {
    "id": "Enter the server address, for example http://192.168.68.68:8080, without credentials or query parameters."
+  },
+  {
+   "id": "Enter the server's MCP address, for example https://tools.example.com/mcp, without credentials or query parameters."
   },
   {
    "id": "Enter the time spent, for example 1h 30m."
@@ -5547,6 +5601,9 @@
    "id": "For deployments without direct internet access to this provider."
   },
   {
+   "id": "For example: Bearer <token>"
+  },
+  {
    "id": "For example: My day"
   },
   {
@@ -5557,6 +5614,9 @@
   },
   {
    "id": "For {name} · Stage {sequence} · {name2}"
+  },
+  {
+   "id": "For {role} and above"
   },
   {
    "id": "For:",
@@ -6059,6 +6119,9 @@
   },
   {
    "id": "I confirm these production settings and have recorded the recovery and backup information."
+  },
+  {
+   "id": "I confirm this tool only reads data"
   },
   {
    "id": "I reviewed this preview. Apply it to the CMDB."
@@ -6943,6 +7006,9 @@
    "id": "Leave blank to leave tags unchanged"
   },
   {
+   "id": "Leave this off unless the data is public. When off, answers that used this server are written by your own AI only."
+  },
+  {
    "id": "Leave unchanged"
   },
   {
@@ -6980,6 +7046,12 @@
   },
   {
    "id": "Let the assistant remember what people ask it to"
+  },
+  {
+   "id": "Let the chat assistant look things up in other systems through their MCP servers. Only remote servers are supported. Data from a tool is not filtered by ServiceOps permissions, so choose who may use each server."
+  },
+  {
+   "id": "Let the chat assistant use connected tools"
   },
   {
    "id": "Level"
@@ -7227,6 +7299,9 @@
   },
   {
    "id": "MAILBOXES"
+  },
+  {
+   "id": "MCP address"
   },
   {
    "id": "MFA has been disabled for your account."
@@ -7923,6 +7998,9 @@
   },
   {
    "id": "Network and security evidence"
+  },
+  {
+   "id": "Network inventory"
   },
   {
    "id": "Network switch"
@@ -8725,6 +8803,9 @@
    "id": "No tickets match this view."
   },
   {
+   "id": "No tools discovered yet. Use Refresh tools."
+  },
+  {
    "id": "No triggers defined yet."
   },
   {
@@ -8848,6 +8929,9 @@
    "id": "Not mapped to any business service yet. Add it under Administration → Service configuration → Service offerings."
   },
   {
+   "id": "Not marked read-only"
+  },
+  {
    "id": "Not provided"
   },
   {
@@ -8855,6 +8939,9 @@
   },
   {
    "id": "Not rack-mounted"
+  },
+  {
+   "id": "Not reachable"
   },
   {
    "id": "Not responding",
@@ -10946,7 +11033,13 @@
    "id": "Read {ci_class} for {role}"
   },
   {
+   "id": "Read-only"
+  },
+  {
    "id": "Read-only plan. Its owner or a tenant administrator with project edit access can change it."
+  },
+  {
+   "id": "Read-only tools on MCP servers you connect below, for agents, managers and administrators. Tools you have not enabled are never used."
   },
   {
    "id": "Read-only work item."
@@ -11144,6 +11237,9 @@
    "id": "Refresh the page before starting an investigation."
   },
   {
+   "id": "Refresh tools"
+  },
+  {
    "id": "Refused: not in a mapped AD/LDAP group"
   },
   {
@@ -11266,6 +11362,9 @@
    "javascript": true
   },
   {
+   "id": "Remote MCP servers only (Streamable HTTP). A server on your own network must be allowlisted by the deployment operator in AI_MCP_PRIVATE_ENDPOINTS."
+  },
+  {
    "id": "Remove",
    "javascript": true
   },
@@ -11329,6 +11428,9 @@
    "id": "Remove the saved value"
   },
   {
+   "id": "Remove the stored credential"
+  },
+  {
    "id": "Remove the system default proxy"
   },
   {
@@ -11365,6 +11467,9 @@
    "javascript": true
   },
   {
+   "id": "Remove {name} and its tools?"
+  },
+  {
    "id": "Remove {name} from this project?"
   },
   {
@@ -11376,6 +11481,9 @@
   {
    "id": "Removed from favorites.",
    "javascript": true
+  },
+  {
+   "id": "Removed {name} and its tools."
   },
   {
    "id": "Rename"
@@ -11748,6 +11856,15 @@
   },
   {
    "id": "Results"
+  },
+  {
+   "id": "Results may be sent to outside AI services"
+  },
+  {
+   "id": "Results may go to outside AI services"
+  },
+  {
+   "id": "Results stay on your own AI"
   },
   {
    "id": "Retention (days)"
@@ -12447,6 +12564,9 @@
    "id": "Saved {changed} permission change(s)."
   },
   {
+   "id": "Saved {name}."
+  },
+  {
    "id": "Saved — leave blank to keep it"
   },
   {
@@ -13091,6 +13211,9 @@
   },
   {
    "id": "Server address"
+  },
+  {
+   "id": "Server in use"
   },
   {
    "id": "Server, Database, Business Application…"
@@ -13926,6 +14049,9 @@
    "id": "Storage backend"
   },
   {
+   "id": "Stored encrypted and never shown again. Changing the address or header removes it."
+  },
+  {
    "id": "Stories and all descendants",
    "javascript": true
   },
@@ -14533,6 +14659,12 @@
    "id": "The configured outbound proxy URL is invalid."
   },
   {
+   "id": "The credential header name may contain only letters, digits and hyphens."
+  },
+  {
+   "id": "The credential is too long."
+  },
+  {
    "id": "The current password is incorrect."
   },
   {
@@ -14778,10 +14910,46 @@
    "id": "The server answered but listed no models. Enter the model identifier manually."
   },
   {
+   "id": "The server could not be reached."
+  },
+  {
    "id": "The server did not list its models. Enter the model identifier manually."
   },
   {
+   "id": "The server does not mark this tool as read-only. Confirm that it only reads data."
+  },
+  {
+   "id": "The server ended the session. Try again."
+  },
+  {
+   "id": "The server marks this tool as one that changes or deletes data. It cannot be enabled."
+  },
+  {
+   "id": "The server refused the request: {reason}"
+  },
+  {
    "id": "The server rejected the API key."
+  },
+  {
+   "id": "The server rejected the credential."
+  },
+  {
+   "id": "The server returned HTTP {status}."
+  },
+  {
+   "id": "The server sent an invalid answer."
+  },
+  {
+   "id": "The server sent an invalid session identifier."
+  },
+  {
+   "id": "The server sent an invalid tool list."
+  },
+  {
+   "id": "The server's answer exceeded its size or time limit."
+  },
+  {
+   "id": "The server's credential could not be decrypted. Enter it again."
   },
   {
    "id": "The service could not be saved. Please try again."
@@ -15091,6 +15259,12 @@
    "id": "This scenario refers to removed work or teams."
   },
   {
+   "id": "This server does not resolve to a public address. A server on your own network must be allowlisted by the deployment operator (AI_MCP_PRIVATE_ENDPOINTS)."
+  },
+  {
+   "id": "This server offers no tools."
+  },
+  {
    "id": "This service is hosted outside your organization. Sensitive requests are never sent to it.",
    "javascript": true
   },
@@ -15309,6 +15483,10 @@
    "id": "Too many verification attempts. Please wait a moment and try again."
   },
   {
+   "id": "Tool",
+   "javascript": true
+  },
+  {
    "id": "Top"
   },
   {
@@ -15501,6 +15679,9 @@
   },
   {
    "id": "Unavailable"
+  },
+  {
+   "id": "Unchanged"
   },
   {
    "id": "Under investigation"
@@ -16238,6 +16419,9 @@
    "id": "What happened"
   },
   {
+   "id": "What it does"
+  },
+  {
    "id": "What may go to an outside service"
   },
   {
@@ -16316,6 +16500,9 @@
   },
   {
    "id": "Who can use it"
+  },
+  {
+   "id": "Who may use it"
   },
   {
    "id": "Who sees this"
@@ -17185,6 +17372,9 @@
    "id": "https://sso.example.com/realms/company/.well-known/openid-configuration"
   },
   {
+   "id": "https://tools.example.com/mcp"
+  },
+  {
    "id": "iOS app and browser desktop notifications"
   },
   {
@@ -17344,6 +17534,12 @@
   {
    "id": "no model",
    "javascript": true
+  },
+  {
+   "id": "no reason given"
+  },
+  {
+   "id": "no result"
   },
   {
    "id": "none"
@@ -17878,6 +18074,9 @@
    "id": "{count} assets"
   },
   {
+   "id": "{count} available"
+  },
+  {
    "id": "{count} change reached a final outcome (closed or cancelled) in this window."
   },
   {
@@ -17903,6 +18102,9 @@
   },
   {
    "id": "{count} contracts still reference this supplier. Deactivate it instead."
+  },
+  {
+   "id": "{count} could not be used (invalid name or input description)."
   },
   {
    "id": "{count} days",
@@ -18463,6 +18665,9 @@
    "id": "{name}. Events without this exact assignment are rejected by the delivery worker."
   },
   {
+   "id": "{name}: {count} tools found. Enable the ones the assistant may use."
+  },
+  {
    "id": "{numbers} withdrawn"
   },
   {
@@ -18663,6 +18868,9 @@
   },
   {
    "id": "{relationship_role} · {criticality} criticality"
+  },
+  {
+   "id": "{role} and above"
   },
   {
    "id": "{role}'s permissions were reset to the ITIL-recommended baseline."

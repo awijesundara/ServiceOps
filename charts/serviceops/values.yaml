@@ -254,6 +254,10 @@ ai:
   # each entry is a server ("http://192.168.68.68:8080"), every port of a host ("http://192.168.68.68:*")
   # or one exact URL. Hosted services (OpenAI, Anthropic, OpenAI-compatible over HTTPS) need no entry here.
   selfHostedEndpoints: ""
+  # MCP servers on your network the chat assistant's connected tools may use, in the same format
+  # ("http://netbox-mcp.tools.svc:8000"). Servers on the internet need no entry but must use HTTPS.
+  # Add a matching extraEgress rule so the web pod (discovery) and the AI worker (tool calls) can reach them.
+  mcpPrivateEndpoints: ""
   # Wall-clock limit for one model call, in seconds (10-270; default 60). Hosted
   # models answer in seconds. A self-hosted model on CPU can take minutes.
   providerTimeoutSeconds: 60

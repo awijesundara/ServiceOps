@@ -504,6 +504,10 @@ def sources_still_accessible(scope, sources):
         elif kind == "asset":
             if not scope.is_staff or not Asset.query.filter_by(id=record_id, tenant_id=scope.tenant_id).first():
                 return False
+        elif kind == "connected_tool":
+            from serviceops_core.ai.mcp import tool_still_usable
+            if not tool_still_usable(scope, record_id):
+                return False
         else:
             return False
     return True

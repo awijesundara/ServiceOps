@@ -107,7 +107,7 @@
       if (source.url) link.href = source.url;
       item.appendChild(link);
       item.appendChild(element("span", "ai-source-title", source.title));
-      item.appendChild(element("span", "badge", source.kind === "ci" ? "CI" : source.kind));
+      item.appendChild(element("span", "badge", source.kind === "ci" ? "CI" : source.kind === "connected_tool" ? tr("Tool") : source.kind));
       list.appendChild(item);
     });
   }

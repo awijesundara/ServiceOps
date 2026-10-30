@@ -125,12 +125,13 @@ def _default_port(scheme):
     return 443 if scheme == "https" else 80
 
 
-def endpoint_allowed(url):
+def endpoint_allowed(url, variable="AI_SELF_HOSTED_ENDPOINTS"):
     """Operators allowlist a server (`http://192.168.68.68:8080`), every port of a host
-    (`http://192.168.68.68:*`), or one exact URL. A server entry covers every path on it."""
+    (`http://192.168.68.68:*`), or one exact URL. A server entry covers every path on it.
+    `variable` names the operator setting that holds the list."""
     parsed = urlsplit(url)
     port = parsed.port or _default_port(parsed.scheme)
-    for entry in os.getenv("AI_SELF_HOSTED_ENDPOINTS", "").split(","):
+    for entry in os.getenv(variable, "").split(","):
         entry = entry.strip().rstrip("/")
         if not entry:
             continue

@@ -91,6 +91,7 @@
           <label class="aiadm-switch"><input type="checkbox" name="chat_enabled" {% if config and config.chat_enabled %}checked{% endif %}><span><strong>{{ tr('Chat assistant for everyone') }}</strong><small>{{ tr('Each person only sees what they can already open.') }}</small></span></label>
           <label class="aiadm-switch"><input type="checkbox" name="actions_enabled" {% if config and config.actions_enabled %}checked{% endif %}><span><strong>{{ tr('Allow approved ticket actions') }}</strong><small>{{ tr('Administrators may prepare state, priority, assignment and exact-comment changes from chat. Incident investigations may prepare an answer as a comment. A person must review and approve every exact change before it is applied.') }}</small></span></label>
           <label class="aiadm-switch"><input type="checkbox" name="memory_enabled" {% if not config or config.memory_enabled %}checked{% endif %}><span><strong>{{ tr('Let the assistant remember what people ask it to') }}</strong><small>{{ tr('Short notes only, kept private to each person, which they can see and delete. Never passwords or payment numbers.') }}</small></span></label>
+          <label class="aiadm-switch"><input type="checkbox" name="tools_enabled" {% if config and config.tools_enabled %}checked{% endif %}><span><strong>{{ tr('Let the chat assistant use connected tools') }}</strong><small>{{ tr('Read-only tools on MCP servers you connect below, for agents, managers and administrators. Tools you have not enabled are never used.') }}</small></span></label>
           <label class="aiadm-switch"><input type="checkbox" name="show_reasoning" {% if config and config.show_reasoning %}checked{% endif %}><span><strong>{{ tr('Let investigations think longer') }}</strong><small>{{ tr('Slower, sometimes better. The thinking itself is never shown or kept.') }}</small></span></label>
         </div>
         <div class="aiadm-limits">
@@ -104,6 +105,65 @@
 
     <div class="aiadm-savebar" data-ai-savebar hidden><span class="muted">{{ tr('You have unsaved changes.') }}</span><button class="primary">{{ tr('Save AI settings') }}</button></div>
   </form>
+
+  <section class="aiadm-section aiadm-tools" id="aiadm-tools" aria-labelledby="aiadm-tools-title">
+    <div class="aiadm-section-head"><div><h2 id="aiadm-tools-title">{{ tr('Connected tools (MCP)') }}</h2>
+      <p class="muted">{{ tr('Let the chat assistant look things up in other systems through their MCP servers. Only remote servers are supported. Data from a tool is not filtered by ServiceOps permissions, so choose who may use each server.') }}</p></div></div>
+    {% if config and not config.tools_enabled %}<p class="ai-banner">{{ tr('Connected tools are switched off. Turn on "Let the chat assistant use connected tools" under Who can use it.') }}</p>{% endif %}
+    {% for server in tool_servers %}
+    <article class="aiadm-tool-server">
+      <header class="aiadm-tool-server-head">
+        <div>
+          <h3>{{ server.name }}</h3>
+          <p class="muted">{{ server.url }}{% if server.server_info %} · {{ server.server_info }}{% endif %}</p>
+          <p class="muted">
+            {% if not server.enabled %}<span class="ai-pill" data-state="cancelled">{{ tr('Paused') }}</span>
+            {% elif server.last_ok %}<span class="ai-pill" data-state="completed">{{ tr('Working') }}</span>
+            {% elif server.last_ok is not none %}<span class="ai-pill" data-state="failed">{{ tr('Not reachable') }}</span>
+            {% else %}<span class="ai-pill" data-state="queued">{{ tr('Not checked yet') }}</span>{% endif %}
+            {{ tr('For {role} and above', role=tr(server.minimum_role)) }} ·
+            {{ tr('Results may go to outside AI services') if server.share_external else tr('Results stay on your own AI') }}
+            {% if server.last_error %}· {{ server.last_error }}{% endif %}
+          </p>
+        </div>
+        <div class="aiadm-tool-server-actions">
+          <form method="post" action="{{ url_for('ai.tool_server_discover', server_id=server.id) }}"><button class="button">{{ tr('Refresh tools') }}</button></form>
+          <form method="post" action="{{ url_for('ai.tool_server_delete', server_id=server.id) }}" data-confirm="{{ tr('Remove {name} and its tools?', name=server.name) }}"><button class="button danger-quiet">{{ tr('Remove') }}</button></form>
+        </div>
+      </header>
+      {% if server.tools %}
+      <table class="aiadm-tool-table">
+        <thead><tr><th scope="col">{{ tr('Tool') }}</th><th scope="col">{{ tr('What it does') }}</th><th scope="col">{{ tr('Use') }}</th></tr></thead>
+        <tbody>
+        {% for tool in server.tools %}
+          <tr>
+            <td><strong>{{ tool.title or tool.name }}</strong>{% if tool.title %}<br><code>{{ tool.name }}</code>{% endif %}
+              {% if tool.destructive %}<br><span class="badge badge-outage">{{ tr('Changes data') }}</span>{% elif tool.read_only %}<br><span class="badge">{{ tr('Read-only') }}</span>{% else %}<br><span class="badge aiadm-badge-caution">{{ tr('Not marked read-only') }}</span>{% endif %}</td>
+            <td>{{ tool.description[:300] }}</td>
+            <td>
+              {% if tool.destructive %}<span class="muted">{{ tr('Cannot be enabled') }}</span>
+              {% else %}
+              <form method="post" action="{{ url_for('ai.tool_enabled', tool_id=tool.id) }}" class="aiadm-tool-toggle">
+                <input type="hidden" name="enabled" value="{{ '' if tool.enabled else 'on' }}">
+                {% if not tool.enabled and not tool.read_only %}<label class="aiadm-confirm"><input type="checkbox" name="confirm_read_only" required> {{ tr('I confirm this tool only reads data') }}</label>{% endif %}
+                <button class="button{% if not tool.enabled %} primary{% endif %}">{{ tr('Disable') if tool.enabled else tr('Enable') }}</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted">{{ tr('No tools discovered yet. Use Refresh tools.') }}</p>{% endif %}
+      <details class="aiadm-tool-edit"><summary>{{ tr('Edit {name}', name=server.name) }}</summary>
+        {% with server=server %}{% include '_ai_tool_server_form.html' %}{% endwith %}
+      </details>
+    </article>
+    {% endfor %}
+    <details class="aiadm-tool-edit"{% if not tool_servers %} open{% endif %}><summary>{{ tr('Connect an MCP server') }}</summary>
+      {% with server=None %}{% include '_ai_tool_server_form.html' %}{% endwith %}
+    </details>
+  </section>
 
   <dialog class="aiadm-dialog" data-ai-dialog aria-labelledby="aiadm-dialog-title">
     <form method="dialog" class="aiadm-dialog-head"><h2 id="aiadm-dialog-title" data-ai-dialog-title>{{ tr('Add an AI service') }}</h2><button class="ai-tool-dark" aria-label="{{ tr('Close') }}">✕</button></form>

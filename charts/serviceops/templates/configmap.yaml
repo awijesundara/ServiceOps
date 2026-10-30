@@ -5,6 +5,7 @@ metadata:
   labels: {{- include "serviceops.labels" . | nindent 4 }}
 data:
   AI_SELF_HOSTED_ENDPOINTS: {{ .Values.ai.selfHostedEndpoints | quote }}
+  AI_MCP_PRIVATE_ENDPOINTS: {{ .Values.ai.mcpPrivateEndpoints | default "" | quote }}
   AI_PROVIDER_TIMEOUT_SECONDS: {{ .Values.ai.providerTimeoutSeconds | default 60 | quote }}
   AI_HOSTED_STALL_SECONDS: {{ .Values.ai.hostedStallSeconds | default 30 | quote }}
   FEATURE_FLAGS: {{ .Values.featureFlags | toJson | quote }}

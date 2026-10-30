@@ -1218,7 +1218,11 @@ html.theme-dark .ai-chat.is-page .ai-chat-memory{background:rgba(24,33,40,0.98)}
 html.theme-dark .detail-list dt{color:var(--muted)}
 html.theme-dark .ai-action-draft{border-color:var(--ai-amber,#62503b)}
 html.theme-dark .ai-error{color:#f38a7c}
-/* projects.css */
+html.theme-dark .aiadm-tool-server{border:1px solid var(--line)}
+html.theme-dark .aiadm-badge-caution{background:#241908;color:#d59958}
+@media(max-width:700px){html.theme-dark .aiadm-tool-table td{border-bottom:0}
+html.theme-dark .aiadm-tool-table tr{border-bottom:1px solid var(--line)}
+}/* projects.css */
 html.theme-dark :where(body.project-app) .empty-state{color:var(--muted)}
 html.theme-dark :where(body.project-app) .empty-state h3{color:var(--ink)}
 html.theme-dark :where(body.project-app) .button.danger,html.theme-dark :where(body.project-app) button.danger{color:var(--red);border-color:#543835}

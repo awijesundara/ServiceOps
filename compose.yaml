@@ -110,6 +110,7 @@ services:
       UPLOAD_FOLDER: /app/uploads
       LOG_DIR: /app/logs
       AI_SELF_HOSTED_ENDPOINTS: ${AI_SELF_HOSTED_ENDPOINTS:-}
+      AI_MCP_PRIVATE_ENDPOINTS: ${AI_MCP_PRIVATE_ENDPOINTS:-}
       AI_PROVIDER_TIMEOUT_SECONDS: ${AI_PROVIDER_TIMEOUT_SECONDS:-60}
       AI_HOSTED_STALL_SECONDS: ${AI_HOSTED_STALL_SECONDS:-30}
       METRICS_ENABLED: ${METRICS_ENABLED:-true}
@@ -223,6 +224,7 @@ services:
       # touches (e.g. inbound email), even when the main app is running
       # in IPFS mode -- a known, documented first-slice limitation.
       AI_SELF_HOSTED_ENDPOINTS: ${AI_SELF_HOSTED_ENDPOINTS:-}
+      AI_MCP_PRIVATE_ENDPOINTS: ${AI_MCP_PRIVATE_ENDPOINTS:-}
       AI_PROVIDER_TIMEOUT_SECONDS: ${AI_PROVIDER_TIMEOUT_SECONDS:-60}
       AI_HOSTED_STALL_SECONDS: ${AI_HOSTED_STALL_SECONDS:-30}
       AUTO_MIGRATE: "false"

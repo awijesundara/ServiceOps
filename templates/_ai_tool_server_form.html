@@ -1,0 +1,18 @@
+<form method="post" action="{{ url_for('ai.tool_server_save') }}" class="form-grid aiadm-tool-form">
+  {% if server %}<input type="hidden" name="server_id" value="{{ server.id }}">{% endif %}
+  <label>{{ tr('Name') }}<input name="name" maxlength="80" required value="{{ server.name if server else '' }}" placeholder="{{ tr('Network inventory') }}"></label>
+  <label>{{ tr('MCP address') }}<input name="url" maxlength="500" required inputmode="url" value="{{ server.url if server else '' }}" placeholder="{{ tr('https://tools.example.com/mcp') }}">
+    <small class="muted">{{ tr('Remote MCP servers only (Streamable HTTP). A server on your own network must be allowlisted by the deployment operator in AI_MCP_PRIVATE_ENDPOINTS.') }}</small></label>
+  <label>{{ tr('Credential header') }}<input name="auth_header" maxlength="80" value="{{ server.auth_header if server else default_auth_header }}" pattern="[A-Za-z0-9-]{1,80}"></label>
+  <label>{{ tr('Credential') }}<input name="auth_value" type="password" maxlength="4000" autocomplete="new-password" placeholder="{{ tr('Unchanged') if server and server.auth_encrypted else tr('For example: Bearer <token>') }}">
+    <small class="muted">{{ tr('Stored encrypted and never shown again. Changing the address or header removes it.') }}</small></label>
+  {% if server and server.auth_encrypted %}<label class="check"><span><input type="checkbox" name="clear_auth"> {{ tr('Remove the stored credential') }}</span></label>{% endif %}
+  <label>{{ tr('Who may use it') }}<select name="minimum_role">
+    {% for role in tool_roles %}<option value="{{ role }}" {% if (server.minimum_role if server else 'agent') == role %}selected{% endif %}>{{ tr('{role} and above', role=tr(role)) }}</option>{% endfor %}
+  </select><small class="muted">{{ tr('Data from this server is not filtered by ServiceOps permissions.') }}</small></label>
+  <label class="check wide"><span><input type="checkbox" name="share_external" {% if server and server.share_external %}checked{% endif %}> {{ tr('Results may be sent to outside AI services') }}</span>
+    <small class="muted">{{ tr('Leave this off unless the data is public. When off, answers that used this server are written by your own AI only.') }}</small></label>
+  {% if server %}<label class="check wide"><span><input type="checkbox" name="enabled" value="on" {% if server.enabled %}checked{% endif %}> {{ tr('Server in use') }}</span></label>
+  {% else %}<input type="hidden" name="enabled" value="on">{% endif %}
+  <div class="wide actions"><button class="primary">{{ tr('Save') if server else tr('Connect and find tools') }}</button></div>
+</form>
