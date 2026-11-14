@@ -84,6 +84,7 @@ services:
       # sessions record the real client instead of the nginx container.
       TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
       TRUST_CLOUDFLARE_PROXY: ${TRUST_CLOUDFLARE_PROXY:-true}
+      TRUST_PRIVATE_PROXIES: ${TRUST_PRIVATE_PROXIES:-true}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
       LDAP_ENABLED: ${LDAP_ENABLED:-false}

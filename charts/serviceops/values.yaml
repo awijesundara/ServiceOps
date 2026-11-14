@@ -179,6 +179,10 @@ proxy:
   # trusted proxy sets to the client address (e.g. CF-Connecting-IP) when it
   # rewrites X-Forwarded-For.
   trustCloudflare: true
+  # false trusts only loopback and trustedCidrs. Use it where users are on
+  # private addresses (they could otherwise forge their address), with the
+  # pod and ingress networks listed in trustedCidrs.
+  trustPrivate: true
   trustedCidrs: ""
   clientIpHeader: ""
   # Exact host names of trusted in-cluster webhook receivers, such as a

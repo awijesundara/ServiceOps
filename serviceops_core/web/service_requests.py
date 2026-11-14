@@ -1,7 +1,6 @@
 """Service catalog, requests, RITMs, catalog tasks and approvals routes.
 
 Moved from app.create_app(); endpoint names are unchanged."""
-import csv
 import io
 import json
 import re
@@ -14,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import HTTPException
 
 import app as core
+from serviceops_core.csv_export import safe_writer
 from serviceops_core.request_withdrawal import settle_request
 from serviceops_core import request_withdrawal
 from app import (
@@ -367,7 +367,7 @@ def register(app):
         export_limit = 5000
         rows = query.order_by(CatalogRequest.opened_at.desc()).limit(export_limit).all()
         buffer = io.StringIO()
-        writer = csv.writer(buffer)
+        writer = safe_writer(buffer)
         writer.writerow(["Number", "Requested for", "Requested by", "State", "Items", "Opened"])
         for req in rows:
             writer.writerow([

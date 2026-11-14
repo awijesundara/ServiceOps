@@ -1,7 +1,6 @@
 """CMDB, assets, racks and topology routes.
 
 Moved from app.create_app(); endpoint names are unchanged."""
-import csv
 import io
 import ipaddress
 import json
@@ -36,6 +35,7 @@ from app import (
     tenant_query,
     tenant_record_or_404,
 )
+from serviceops_core.csv_export import safe_writer
 from serviceops_core.ci_class_policy import (
     ci_class_action_allowed,
     ci_class_read_allowed,
@@ -311,7 +311,7 @@ def register(app):
                     seen_keys.add(key)
                     attribute_keys.append(key)
         buffer = io.StringIO()
-        writer = csv.writer(buffer)
+        writer = safe_writer(buffer)
         writer.writerow([
             "Name", "Class", "Environment", "Operational status", "Lifecycle state",
             "Business criticality", "IP address", "Serial number", "Vendor", "Model",

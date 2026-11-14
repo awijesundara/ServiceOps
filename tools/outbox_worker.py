@@ -12,7 +12,7 @@ from app import (
     process_ldap_sync_schedule, process_outbox,
     process_performance_sample_schedule, process_rt_import_jobs,
     process_sla_breaches, process_update_check_schedule,
-    process_workflow_jobs, process_workflow_schedules,
+    process_workflow_jobs, process_workflow_schedules, purge_expired_rows,
 )
 
 running = True
@@ -84,6 +84,7 @@ with app.app_context():
                 + process_integration_sync_jobs()
                 + process_client_escalation_policies() + process_client_email_inbox()
                 + process_data_retention_purge() + process_google_chat_pubsub_schedule()
+                + purge_expired_rows()
             )
         except Exception:
             # A single bad tenant/record must never kill the whole worker

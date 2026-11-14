@@ -1,7 +1,6 @@
 """Incident, change, problem and related work routes.
 
 Moved from app.create_app(); endpoint names are unchanged."""
-import csv
 import io
 import json
 from collections import defaultdict
@@ -11,6 +10,7 @@ from flask import abort, current_app, flash, jsonify, redirect, render_template,
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
+from serviceops_core.csv_export import safe_writer
 from serviceops_core.attachment_history import deleted_comment_attachments
 from serviceops_core.change_service_impact import impacted_services
 from werkzeug.exceptions import HTTPException
@@ -228,7 +228,7 @@ def register(app):
             Ticket.priority, Ticket.updated_at.desc()
         ).limit(export_limit).all()
         buffer = io.StringIO()
-        writer = csv.writer(buffer)
+        writer = safe_writer(buffer)
         writer.writerow(["Type", "Number", "Title", "State", "Priority", "Assignee", "Updated"])
         for ticket in tickets_rows:
             writer.writerow([
@@ -465,7 +465,7 @@ def register(app):
             db.joinedload(Ticket.requester), db.joinedload(Ticket.assignee),
         ).order_by(Ticket.updated_at.desc()).limit(export_limit).all()
         buffer = io.StringIO()
-        writer = csv.writer(buffer)
+        writer = safe_writer(buffer)
         writer.writerow(["Number", "Title", "State", "Priority", "Requester", "Assignee", "Updated"])
         for ticket in rows:
             writer.writerow([

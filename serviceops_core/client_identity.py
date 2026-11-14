@@ -7,6 +7,11 @@ forwarding headers only when the request actually came from a trusted proxy
 (private/cluster ranges by default, plus Cloudflare's published edge ranges),
 so a client that reaches the app directly cannot forge its address.
 
+Trusting every private range also trusts a user on the internal network: the
+address they put in X-Forwarded-For is taken as theirs. Where users are on
+private addresses, set TRUST_PRIVATE_PROXIES=false and list the real proxies
+in TRUSTED_PROXY_CIDRS.
+
 Browsers never reveal a computer's or phone's hostname. What is available is
 recorded instead: a forward-confirmed reverse-DNS name for the real address
 (meaningful on corporate networks whose DNS registers workstations), device
@@ -23,6 +28,8 @@ PRIVATE_NETWORKS = (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10",
     "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10",
 )
+# A proxy in the same container or pod (the bundled nginx).
+LOOPBACK_NETWORKS = ("127.0.0.0/8", "::1/128")
 # Cloudflare's published edge ranges (https://www.cloudflare.com/ips/). An edge
 # server appends the visitor's address to X-Forwarded-For before forwarding.
 CLOUDFLARE_NETWORKS = (
@@ -36,6 +43,10 @@ CLIENT_HINT_HEADERS = (
     "Sec-CH-UA-Platform-Version", "Sec-CH-UA-Model", "Sec-CH-UA-Arch",
     "Sec-CH-UA-Bitness", "Sec-CH-UA-Full-Version-List",
 )
+
+
+def _enabled(value):
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _networks(values):
@@ -68,6 +79,8 @@ class ClientAddressMiddleware:
 
     Configuration (environment):
       TRUSTED_PROXY_CIDRS     extra proxy networks, comma separated
+      TRUST_PRIVATE_PROXIES   treat every private range as a proxy (default true);
+                              false trusts only loopback and TRUSTED_PROXY_CIDRS
       TRUST_CLOUDFLARE_PROXY  treat Cloudflare edge ranges as proxies (default true)
       CLIENT_IP_HEADER        a header a trusted proxy sets to the client address
                               (e.g. CF-Connecting-IP when X-Forwarded-For is rewritten)
@@ -76,8 +89,11 @@ class ClientAddressMiddleware:
     def __init__(self, app, environ_source=os.environ):
         self.app = app
         extra = environ_source.get("TRUSTED_PROXY_CIDRS", "").split(",")
-        trusted = list(PRIVATE_NETWORKS) + extra
-        if environ_source.get("TRUST_CLOUDFLARE_PROXY", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        if _enabled(environ_source.get("TRUST_PRIVATE_PROXIES", "true")):
+            trusted = list(PRIVATE_NETWORKS) + extra
+        else:
+            trusted = list(LOOPBACK_NETWORKS) + extra
+        if _enabled(environ_source.get("TRUST_CLOUDFLARE_PROXY", "true")):
             trusted += list(CLOUDFLARE_NETWORKS)
         self.trusted = _networks(trusted)
         header = environ_source.get("CLIENT_IP_HEADER", "").strip()

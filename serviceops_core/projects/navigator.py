@@ -1,11 +1,11 @@
 """Web issue navigator and access-scoped CSV export for the core JQL dialect."""
-import csv
 import io
 
 from flask import Response, abort, current_app, flash, redirect, request, url_for
 from flask_login import current_user
 from werkzeug.exceptions import HTTPException
 
+from serviceops_core.csv_export import safe_writer
 from serviceops_core.localization import tr
 from serviceops_core.projects import filters, query, service
 from serviceops_core.projects.models import ProjectFilterFavourite, ProjectSavedFilter
@@ -18,13 +18,13 @@ EXPORT_LIMIT=10000
 def csv_response(items):
     try:
         output=io.StringIO(newline='')
-        writer=csv.writer(output)
+        writer=safe_writer(output)
         writer.writerow(['Key','Project','Type','Summary','Status','Priority','Assignees','Start','Due','Story points'])
         for item in items:
             values=[item.key,item.project.name,item.item_type,item.title,item.status.name,item.priority,
                     ', '.join(user.name for user in item.assignees),item.start_date.isoformat() if item.start_date else '',
                     item.due_date.isoformat() if item.due_date else '',item.story_points if item.story_points is not None else '']
-            writer.writerow(["'"+str(value) if str(value).lstrip().startswith(('=','+','-','@')) else value for value in values])
+            writer.writerow(values)
         response=Response('\ufeff'+output.getvalue(),content_type='text/csv; charset=utf-8')
         response.headers['Content-Disposition']='attachment; filename="serviceops-work-items.csv"'
         response.headers['Cache-Control']='no-store'

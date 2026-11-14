@@ -98,6 +98,8 @@ from serviceops_core.ci_class_policy import (
     ci_class_action_allowed, ci_class_read_allowed, managed_ci_classes,
     restrict_ci_query_to_readable_classes, unreadable_ci_classes,
 )
+from serviceops_core.csv_export import safe_row
+from serviceops_core.housekeeping import purge_expired_rows
 from serviceops_core.client_identity import CLIENT_HINT_HEADERS, ClientAddressMiddleware, client_location, describe_device
 from serviceops_core.dns_lookup import resolve_hostname, resolve_ip
 from serviceops_core.dns_pin import pin_resolved_addresses
@@ -7229,7 +7231,7 @@ def _export_response(rows, fields, fmt, filename_stem):
         writer = csv.DictWriter(buffer, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            writer.writerow(safe_row(row))
         body = buffer.getvalue()
         mimetype, ext = "text/csv", "csv"
     response = Response(body, mimetype=mimetype)
@@ -8258,7 +8260,7 @@ def create_app(test_config=None):
                                 + process_rt_import_jobs() + process_discovery_schedule()
                                 + process_client_escalation_policies() + process_client_email_inbox()
                                 + process_data_retention_purge() + process_google_chat_pubsub_schedule()
-                                + process_contract_alerts()
+                                + process_contract_alerts() + purge_expired_rows()
                             )
                             process_performance_sample_schedule()
                             process_update_check_schedule()

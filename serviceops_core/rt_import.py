@@ -287,7 +287,8 @@ def _resolve_or_create_user(email, name, tenant_id, summary):
     email = (email or "").strip().lower()
     if not email:
         return None
-    user = core_app.tenant_query(core_app.User).filter(
+    user = core_app.User.query.filter(
+        core_app.User.tenant_id == tenant_id,
         db.func.lower(core_app.User.email) == email
     ).first()
     if user:

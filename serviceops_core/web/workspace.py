@@ -1,7 +1,6 @@
 """Home, workspace, profile, notifications, search and analytics routes.
 
 Moved from app.create_app(); endpoint names are unchanged."""
-import csv
 import io
 import json
 import os
@@ -27,6 +26,7 @@ from flask import (
 from flask_login import current_user, login_required
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
+from serviceops_core.csv_export import safe_writer
 from serviceops_core.service_status import published_service_health, employee_service_notices
 
 import app as core
@@ -242,7 +242,7 @@ def register(app):
     def manager_portal_export():
         team_rows, member_rows_by_group = manager_portal_context()
         buffer = io.StringIO()
-        writer = csv.writer(buffer)
+        writer = safe_writer(buffer)
         writer.writerow([
             "Team", "Team manager", "Member", "Username", "Role", "Status",
             "Open incidents", "Open changes", "Open tasks",
@@ -718,7 +718,7 @@ def register(app):
     def analytics_export_csv():
         kpis = analytics_kpis()
         buffer = io.StringIO()
-        writer = csv.writer(buffer)
+        writer = safe_writer(buffer)
         writer.writerow(["Metric", "Value"])
         writer.writerow(["Open records", kpis["open_count"]])
         writer.writerow(["SLA breached (open)", kpis["sla_breached_open"]])

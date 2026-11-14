@@ -224,7 +224,9 @@ def validate(config):
         "ldap": test_ldap(config),
         "keycloak": test_keycloak(config),
     }
-    if len(config.get("admin_password", "")) < 14:
+    if any(isinstance(value, str) and "`" in value for value in config.values()):
+        checks["security"] = result(False, tr("Settings cannot contain a backtick (`)"))
+    elif len(config.get("admin_password", "")) < 14:
         checks["security"] = result(False, tr("Administrator password must be at least 14 characters"))
     elif config.get("ldap_enabled") and not (
             clean(config.get("ldap_uri")).startswith("ldaps://") or config.get("ldap_start_tls")
@@ -243,7 +245,15 @@ def validate(config):
 
 
 def env_line(key, value):
-    value = clean(value).replace("\\", "\\\\").replace('"', '\\"')
+    # The file is read by docker compose and sourced by bash (./serviceops).
+    # Both expand $NAME inside double quotes and bash also runs $(...), so a
+    # password containing "$" would be changed or executed. The two disagree
+    # on an escaped backtick, so validate() refuses one.
+    value = clean(value)
+    if "`" in value:
+        raise ValueError(f"{key} contains a backtick")
+    for special in ("\\", '"', "$"):
+        value = value.replace(special, "\\" + special)
     return f'{key}="{value}"'
 
 
