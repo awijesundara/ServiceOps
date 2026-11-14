@@ -1166,3 +1166,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 })();
+
+// Phones show record lists as cards (experience.css): each cell carries its
+// column's name, the record link leads the card and the summary spans it.
+(() => {
+  document.querySelectorAll("table.record-list-table").forEach((table) => {
+    const labels = [...table.querySelectorAll(":scope > thead > tr > th")]
+      .map((head) => head.textContent.replace(/\s+/g, " ").replace(/^[^\p{L}\p{N}]+/u, "").trim());
+    if (!labels.length) return;
+    table.querySelectorAll(":scope > tbody > tr").forEach((row) => {
+      const cells = [...row.children].filter((cell) => cell.tagName === "TD");
+      if (cells.length !== labels.length) return; // an empty-state or detail row spanning the table
+      cells.forEach((cell, index) => {
+        if (labels[index]) cell.dataset.label = labels[index];
+        if (!cell.textContent.trim() && !cell.querySelector("a,button,input,select,img,svg")) cell.classList.add("card-blank");
+      });
+      (cells.find((cell) => cell.querySelector("a[href]")) || cells[0]).classList.add("card-lead");
+      const summary = cells.find((cell) => !cell.classList.contains("card-lead") && cell.querySelector(".truncate"));
+      if (summary) summary.classList.add("card-wide");
+    });
+    table.classList.add("is-cards");
+  });
+})();

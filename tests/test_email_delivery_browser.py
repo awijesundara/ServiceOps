@@ -27,7 +27,8 @@ def test_email_services_pages(server, app):
             page.goto(base + "/admin/email")
             page.wait_for_load_state("networkidle")
             assert page.locator(".email-service").count() == 2
-            assert page.locator(".email-provider-card").count() == 9
+            from serviceops_core.mail import PROVIDERS
+            assert page.locator(".email-provider-card").count() == len(PROVIDERS)
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
             assert not _axe(page)
             page.screenshot(path=f"{SHOTS}/email-services-{width}.png", full_page=True)

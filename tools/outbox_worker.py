@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from app import (
-    PlatformSetting, create_app, db, now, process_client_email_inbox,
+    PlatformSetting, create_app, db, now, process_client_email_inbox, process_contract_alerts,
     process_client_escalation_policies, process_data_retention_purge,
     process_discovery_schedule, process_google_chat_pubsub_schedule,
     process_kpi_snapshot_schedule,
@@ -84,7 +84,7 @@ with app.app_context():
                 + process_integration_sync_jobs()
                 + process_client_escalation_policies() + process_client_email_inbox()
                 + process_data_retention_purge() + process_google_chat_pubsub_schedule()
-                + purge_expired_rows()
+                + process_contract_alerts() + purge_expired_rows()
             )
         except Exception:
             # A single bad tenant/record must never kill the whole worker

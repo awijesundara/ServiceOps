@@ -1,0 +1,78 @@
+/* Page arrangement shared by every page.
+   Layout and motion only: colors come from the theme variables, so the
+   light, dark and brand themes need nothing extra here. */
+
+/* Every page used to start invisible and fade in over a third of a second,
+   which read as a blank flash on each click. Content is painted at once.
+   (Browser page cross-fades were tried and dropped: Chromium reports an
+   error whenever a navigation ends on a page that did not opt in.) */
+.page-reveal{animation:none}
+
+/* The closed off-canvas menu kept its drop shadow, which showed as a grey
+   band down the left edge of every phone and tablet page. */
+@media(max-width:900px){
+  .nav-collapsed .sidebar{box-shadow:none}
+}
+
+/* The floating assistant button must not sit on top of the last row or the
+   form buttons at the end of a page. */
+body:has(.ai-launcher) main{padding-bottom:92px}
+@media(max-width:700px){
+  .ai-launcher{padding:14px;right:14px;bottom:14px}
+  .ai-launcher>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+}
+
+/* Record lists, desktop: the summary column takes the room that is left,
+   so the last columns are never cut off at the right edge. */
+@media(min-width:701px){
+  .ticket-list-table{width:100%}
+  .ticket-list-table td:nth-child(3){width:100%;max-width:0}
+  .ticket-list-table td:nth-child(3) .truncate{display:block;max-width:none}
+}
+
+/* Record lists, phones: toolbar in reading order, and each record as a
+   card with every field labelled, instead of a table cut off at the edge.
+   Labels are copied from the column headers by platform.js. */
+@media(max-width:700px){
+  body main .list-toolbar{gap:8px}
+  body main .list-toolbar .list-title{flex:1 1 auto;min-width:0}
+  body main .list-toolbar .list-search{order:5;flex:1 1 100%;display:flex;flex-wrap:nowrap;gap:8px;margin-left:0}
+  body main .list-toolbar .list-search>input:not([type=hidden]){flex:1 1 auto;width:auto;min-width:0}
+  body main .list-toolbar .list-search>button{flex:0 0 auto}
+  body main .list-toolbar .list-pagination{order:6;margin-left:auto}
+  body main .list-toolbar .list-pagination:has(a.disabled:first-child):has(a.disabled:last-child){display:none}
+
+  table.record-list-table.is-cards{display:block;width:100%;min-width:0}
+  table.record-list-table.is-cards>thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  table.record-list-table.is-cards>tbody{display:block}
+  table.record-list-table.is-cards>tbody>tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 14px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  table.record-list-table.is-cards>tbody>tr>td{display:block;min-width:0;padding:0;border:0;white-space:normal;overflow-wrap:anywhere;text-align:left}
+  table.record-list-table.is-cards>tbody>tr>td[data-label]::before{content:attr(data-label);display:block;margin-bottom:1px;color:var(--muted);font-size:10.5px;font-weight:650;letter-spacing:.06em;text-transform:uppercase}
+  table.record-list-table.is-cards>tbody>tr>td.card-lead{grid-column:1/-1;font-size:15px;font-weight:650}
+  table.record-list-table.is-cards>tbody>tr>td.card-lead::before{display:none}
+  table.record-list-table.is-cards>tbody>tr>td.card-wide{grid-column:1/-1}
+  table.record-list-table.is-cards>tbody>tr>td:is(:empty,.card-blank){display:none}
+  table.record-list-table.is-cards>tbody>tr>td[colspan]{grid-column:1/-1}
+  table.record-list-table.is-cards .truncate{display:inline;max-width:none;white-space:normal;overflow:visible}
+  .task-list-scroll:has(>table.is-cards){overflow-x:visible}
+}
+@media(max-width:700px){
+  /* Opened and Category stay on the record itself; the card shows the rest. */
+  .ticket-list-table.is-cards>tbody>tr>td:is(:nth-child(2),:nth-child(7)){display:none}
+}
+
+/* Sign-in, recovery and verification cards: each label above a full-width
+   field and one full-width action, the arrangement people expect there. */
+body main.auth-main .login-card .stack>label{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;padding:0;border:0;align-items:start}
+body main.auth-main .login-card .stack>label>:is(input,select){width:100%;max-width:none;min-width:0;min-height:44px}
+body main.auth-main .login-card .stack>button.primary,
+body main.auth-main .login-card>a.button.primary{display:flex;justify-content:center;width:100%}
+body main.auth-main .login-card .login-card-note{margin-top:16px}
+
+/* Side-by-side analytics cards start on the same line: the spacing meant
+   for stacked panels pushed every card after the first one down. */
+.analytics-grid>.panel{margin-top:0}
+/* A catalog category is a small label, not a bar across the card. */
+.catalog-item>.tag{align-self:flex-start}
+/* A service's criticality sits under its name instead of running into it. */
+.analytics-grid td>strong+small{display:block}

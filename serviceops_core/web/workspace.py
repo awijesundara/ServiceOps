@@ -674,6 +674,8 @@ def register(app):
         rows = query.order_by(Notification.created_at.desc()).offset(
             (page - 1) * per_page
         ).limit(per_page).all()
+        # Held while the links resolve: one query per record type, not one per row.
+        targets = core.prefetch_record_references((row.target_type, row.target_id) for row in rows)  # noqa: F841
         notification_urls = {
             row.id: notification_target_url(row.target_type, row.target_id) for row in rows
         }

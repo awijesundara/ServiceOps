@@ -5537,10 +5537,18 @@ def process_kpi_snapshot_schedule(limit=50):
     return processed
 
 
+_contract_alerts_checked = [None]
+
+
 def process_contract_alerts():
     """Alert contract owners once when a contract enters its notice period
     (see serviceops_core.itam.alerts)."""
     from serviceops_core.itam.alerts import send_contract_alerts
+    # Notice periods are counted in days: a look every quarter of an hour is
+    # plenty, and the worker calls this on every pass.
+    if _contract_alerts_checked[0] is not None and time_module.monotonic() - _contract_alerts_checked[0] < 900:
+        return 0
+    _contract_alerts_checked[0] = time_module.monotonic()
     try:
         return send_contract_alerts()
     except Exception:  # noqa: BLE001 - never stop the worker loop

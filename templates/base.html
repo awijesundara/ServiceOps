@@ -53,6 +53,7 @@
   <script src="{{ url_for('static', filename='ai-chat-panel.js', v=asset_version) }}" defer></script>
   {% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='controls.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='experience.css', v=asset_version) }}">
   {# Last, so its html.theme-dark rules follow every light stylesheet. "system" lets the browser apply it only while the device is in dark mode. #}
   {% if request.endpoint == 'preferences' or ui_theme in ui_dark_themes or ui_theme == 'system' %}<link id="serviceops-dark-theme" rel="stylesheet" href="{{ url_for('static', filename='dark.css', v=asset_version) }}" media="{{ theme_dark_media }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='themes.css', v=asset_version) }}">

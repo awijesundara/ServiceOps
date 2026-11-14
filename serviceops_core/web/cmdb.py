@@ -118,6 +118,12 @@ def _bounded_netbox_body(response, ceiling, deadline):
         response.close()
 
 
+# When NetBox cannot be reached, every device picture in a rack view would
+# hold a web worker thread for its whole connect timeout. After one failure
+# the pictures are skipped for a short while instead (per process).
+ARTWORK_RETRY_SECONDS = 60
+
+
 def _netbox_object(response, deadline):
     payload = json.loads(_bounded_netbox_body(response, 1024 * 1024, deadline))
     if not isinstance(payload, dict):
@@ -1019,6 +1025,9 @@ def register(app):
         # Validated before it is placed in any request path.
         if not netbox_device_id.isdecimal():
             abort(404)
+        unavailable_until = current_app.extensions.setdefault("netbox_artwork_unavailable_until", {})
+        if unavailable_until.get(base_url, 0) > time.monotonic():
+            abort(502)
         client = _netbox_session(base_url, token)
         deadline = time.monotonic() + 30
         try:
@@ -1062,7 +1071,9 @@ def register(app):
             response.headers["Cache-Control"] = "private, max-age=3600"
             response.headers["X-Content-Type-Options"] = "nosniff"
             return response
-        except (requests.RequestException, ValueError, TypeError, TimeoutError):
+        except (requests.RequestException, ValueError, TypeError, TimeoutError) as error:
+            if isinstance(error, (requests.ConnectionError, requests.Timeout, TimeoutError)):
+                unavailable_until[base_url] = time.monotonic() + ARTWORK_RETRY_SECONDS
             current_app.logger.warning("NetBox device artwork retrieval failed: invalid or unavailable upstream response")
             abort(502)
         finally:
