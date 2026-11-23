@@ -5557,40 +5557,108 @@ def process_contract_alerts():
         return 0
 
 
+def touch_worker_heartbeat():
+    """Keeps the background worker's Kubernetes liveness file fresh during
+    long work (see charts/serviceops/templates/worker.yaml: the worker is
+    restarted when it is older than 240 s). Harmless where no probe reads it."""
+    try:
+        Path("/tmp/serviceops-worker-heartbeat").touch()
+    except OSError:
+        pass
+
+
+RT_IMPORT_SLICE_SECONDS = 60
+
+
+def _merge_rt_summary(previous, current):
+    """Adds one slice's counts to the job's running totals."""
+    if not previous:
+        return current
+    merged = dict(current)
+    for key, value in previous.items():
+        if isinstance(value, int) and not isinstance(value, bool) and key != "tenant_id":
+            merged[key] = value + current.get(key, 0)
+        elif isinstance(value, list):
+            merged[key] = (value + current.get(key, []))[:501]
+    return merged
+
+
 def process_rt_import_jobs(limit=1):
-    """Runs queued RT import jobs (see RTImportJob) in the background
-    worker, outside any web-request timeout. Processes at most `limit` per
-    call -- one at a time by default, since these are slow, infrequent
-    admin-triggered runs, not something that needs parallelism, and a
-    single stuck RT instance shouldn't block the rest of the worker loop
-    from noticing it should give up on it."""
+    """Runs queued RT import jobs (see RTImportJob) in the background worker,
+    outside any web-request timeout.
+
+    A large import against a slow RT instance takes far longer than the
+    worker's liveness window, and the worker loop also sends email and runs
+    SLAs. So a real import runs in slices of about RT_IMPORT_SLICE_SECONDS,
+    committing after every ticket; between slices the job stays "Running" and
+    the worker loop carries on, and the next pass resumes it (already-imported
+    tickets are skipped). The heartbeat file is touched throughout. A preview
+    (dry run) is bounded by sample size instead and finishes in one pass.
+
+    Only one worker runs a given tenant's import at a time (advisory lock), and
+    a job left "Running" by a worker that was stopped is simply resumed."""
+    from serviceops_core.integration_job_lock import integration_job_lock
     from serviceops_core.rt_import import RTImportError, import_from_rt
 
-    jobs = RTImportJob.query.filter_by(status="Pending").order_by(RTImportJob.id).limit(limit).all()
+    candidates = db.session.query(RTImportJob.id, RTImportJob.tenant_id).filter(
+        RTImportJob.status.in_(["Pending", "Running"])
+    ).order_by(RTImportJob.id).limit(20).all()
     processed = 0
-    for job in jobs:
-        job.status = "Running"
-        job.started_at = now()
-        db.session.commit()
-        try:
-            result = import_from_rt(
-                job.tenant_id, job.actor_user_id, dry_run=job.dry_run,
-                query=job.search_query, limit=job.record_limit,
-            )
-        except RTImportError as error:
-            job.status = "Failed"
-            job.error = str(error)
-        except Exception as error:  # noqa: BLE001 - a bad RT response must not crash the worker loop
-            db.session.rollback()
-            job = db.session.get(RTImportJob, job.id)
-            job.status = "Failed"
-            job.error = f"{type(error).__name__}: {error}"
-        else:
-            job.status = "Completed"
-            job.result_json = json.dumps(result)
-        job.finished_at = now()
-        db.session.commit()
-        processed += 1
+    for job_id, tenant_id in candidates:
+        if processed >= limit:
+            break
+        with integration_job_lock(db.engine, tenant_id, "rt_import") as acquired:
+            if not acquired:
+                continue
+            db.session.expire_all()
+            job = db.session.get(RTImportJob, job_id)
+            if not job or job.status not in ("Pending", "Running"):
+                continue
+            if job.status == "Running" and job.dry_run:
+                # A preview interrupted by a stopped worker has nothing saved to resume.
+                job.status = "Failed"
+                job.error = "The preview was interrupted (worker restarted); run it again."
+                job.finished_at = now()
+                db.session.commit()
+                continue
+            previous = json.loads(job.result_json) if job.result_json else None
+            if job.status == "Pending":
+                job.status = "Running"
+                job.started_at = now()
+            db.session.commit()
+            done_before = (previous or {}).get("records_created", 0)
+            remaining = None if job.record_limit is None else max(0, job.record_limit - done_before)
+            touch_worker_heartbeat()
+            try:
+                result = import_from_rt(
+                    job.tenant_id, job.actor_user_id, dry_run=job.dry_run,
+                    query=job.search_query, limit=remaining,
+                    deadline=None if job.dry_run else time_module.monotonic() + RT_IMPORT_SLICE_SECONDS,
+                    tick=touch_worker_heartbeat,
+                ) if remaining != 0 else {"finished": True}
+            except RTImportError as error:
+                db.session.rollback()
+                job = db.session.get(RTImportJob, job_id)
+                job.status = "Failed"
+                job.error = str(error)
+                job.finished_at = now()
+            except Exception as error:  # noqa: BLE001 - a bad RT response must not crash the worker loop
+                db.session.rollback()
+                current_app.logger.exception("RT import job %s failed", job_id)
+                job = db.session.get(RTImportJob, job_id)
+                job.status = "Failed"
+                job.error = f"{type(error).__name__}: {str(error)[:500]}"
+                job.finished_at = now()
+            else:
+                job = db.session.get(RTImportJob, job_id)
+                merged = _merge_rt_summary(previous, result)
+                job.result_json = json.dumps(merged)
+                if result.get("finished", True):
+                    job.status = "Completed"
+                    job.finished_at = now()
+            db.session.commit()
+            touch_worker_heartbeat()
+            processed += 1
     return processed
 
 

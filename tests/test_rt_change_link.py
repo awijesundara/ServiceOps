@@ -32,7 +32,7 @@ class _Response:
 
 
 class _Session:
-    def get(self, url, params=None, timeout=None):
+    def get(self, url, params=None, timeout=None, **kwargs):
         return _Response(url.split("rt.example", 1)[1])
 
 

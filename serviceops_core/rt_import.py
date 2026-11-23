@@ -69,6 +69,15 @@ from serviceops_core.localization import tr
 # triggered import, not something that needs to be tuned per deployment.
 _CONCURRENCY = 8
 
+# Crash-safety limits. A real RT instance can return enormous attachments,
+# thousands of transactions, odd JSON and text PostgreSQL rejects; none of that
+# may take the background worker down or poison the whole import.
+_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024   # larger attachments are noted, not downloaded
+_MAX_RESPONSE_BYTES = 40 * 1024 * 1024     # any single RT response (base64 adds a third)
+_MAX_HISTORY_TRANSACTIONS = 2000           # per ticket
+_MAX_SUMMARY_ITEMS = 500                   # errors and preview rows kept in a job result
+_DRY_RUN_SAMPLE = 200                      # a preview looks at most this many new tickets
+
 # RT ships with new/open/stalled/resolved/rejected/deleted by default, but
 # almost every real deployment (this one included) customizes its lifecycle
 # to add statuses like "closed". Unrecognized statuses are NOT silently
@@ -125,7 +134,7 @@ def _map_status(rt_status, status_map, summary=None):
     if key in status_map:
         return status_map[key]
     if summary is not None:
-        summary["errors"].append(
+        _note(summary, "errors", 
             f"Unrecognized RT status '{rt_status}' -- defaulted to New. "
             "Add it to the status map in rt_import.py if your RT lifecycle uses it."
         )
@@ -177,11 +186,71 @@ def _rt_session(base_url, token):
     return session
 
 
-def _get(session, base_url, path, params=None):
+# The running import's heartbeat (set by import_from_rt for its duration), so
+# slow inner loops can keep the background worker's liveness file fresh.
+_tick = None
+
+
+def _heartbeat():
+    if _tick:
+        _tick()
+
+
+class RTResponseError(requests.RequestException):
+    """RT answered, but not with usable JSON (a login page, a proxy error page,
+    a truncated or oversized body). Treated like a failed request, so the
+    same per-ticket / per-attachment isolation applies."""
+
+
+def _get(session, base_url, path, params=None, max_bytes=_MAX_RESPONSE_BYTES):
     url = base_url.rstrip("/") + path
-    response = session.get(url, params=params, timeout=15)
-    response.raise_for_status()
-    return response.json()
+    response = session.get(url, params=params, timeout=15, stream=True)
+    try:
+        response.raise_for_status()
+        if hasattr(response, "iter_content"):
+            # Read with a size cap: a huge attachment or a runaway response
+            # must not exhaust the worker's memory.
+            declared = str(getattr(response, "headers", {}).get("Content-Length") or "")
+            if declared.isdigit() and int(declared) > max_bytes:
+                raise RTResponseError(f"RT response too large ({int(declared)} bytes)")
+            body = bytearray()
+            for chunk in response.iter_content(65536):
+                body.extend(chunk)
+                if len(body) > max_bytes:
+                    raise RTResponseError("RT response too large")
+            text = bytes(body).decode("utf-8", errors="replace")
+            payload = json.loads(text)
+        else:  # adapters/fakes without streaming
+            payload = response.json()
+    except ValueError as error:
+        raise RTResponseError(f"RT returned a non-JSON response from {path}") from error
+    finally:
+        close = getattr(response, "close", None)
+        if close:
+            close()
+    if not isinstance(payload, dict):
+        raise RTResponseError(f"RT returned an unexpected JSON shape from {path}")
+    return payload
+
+
+def _clean(text, limit=None):
+    """Text PostgreSQL accepts: NUL characters (which RT mail bodies and
+    filenames can contain) are refused by PostgreSQL text columns and would
+    fail the ticket. Optionally truncated to a column's length."""
+    if text is None:
+        return None
+    text = str(text).replace("\x00", "")
+    return text[:limit] if limit else text
+
+
+def _note(summary, key, item):
+    """Appends to a bounded summary list, so a pathological import cannot grow
+    the job result (stored in the database, shown on the page) without limit."""
+    items = summary[key]
+    if len(items) < _MAX_SUMMARY_ITEMS:
+        items.append(item)
+    elif len(items) == _MAX_SUMMARY_ITEMS:
+        items.append("... further entries omitted" if key == "errors" else {"omitted": True})
 
 
 def _fetch_many(session, base_url, path_template, ids, params=None):
@@ -196,7 +265,7 @@ def _fetch_many(session, base_url, path_template, ids, params=None):
     def fetch(item_id):
         try:
             return item_id, _get(session, base_url, path_template.format(item_id), params=params)
-        except requests.RequestException:
+        except Exception:  # noqa: BLE001 - one unreadable item must not fail the others
             return item_id, None
 
     with ThreadPoolExecutor(max_workers=min(_CONCURRENCY, len(ids))) as pool:
@@ -217,12 +286,17 @@ def _paginate_ticket_ids(session, base_url, query):
         payload = _get(session, base_url, "/REST/2.0/tickets", params={
             "query": query, "page": page, "per_page": per_page,
         })
-        items = payload.get("items", [])
+        items = payload.get("items")
+        items = items if isinstance(items, list) else []
         for item in items:
-            ticket_id = item.get("id") or item.get("Id")
+            ticket_id = (item.get("id") or item.get("Id")) if isinstance(item, dict) else None
             if ticket_id:
                 yield str(ticket_id)
-        if page >= (payload.get("pages") or 1) or not items:
+        try:
+            pages = int(payload.get("pages") or 1)
+        except (TypeError, ValueError):
+            pages = page + 1 if len(items) >= per_page else page
+        if page >= pages or not items:
             return
         page += 1
 
@@ -245,7 +319,7 @@ class _RecordCache:
         if queue_id not in self._queues:
             try:
                 record = _get(self.session, self.base_url, f"/REST/2.0/queue/{queue_id}")
-                self._queues[queue_id] = record.get("Name") or f"RT Queue {queue_id}"
+                self._queues[queue_id] = _clean(record.get("Name"), 120) or f"RT Queue {queue_id}"
             except requests.RequestException:
                 self._queues[queue_id] = f"RT Queue {queue_id}"
         return self._queues[queue_id]
@@ -258,8 +332,8 @@ class _RecordCache:
             try:
                 record = _get(self.session, self.base_url, f"/REST/2.0/user/{user_id}")
                 self._users[user_id] = {
-                    "email": record.get("EmailAddress") or "",
-                    "name": record.get("RealName") or record.get("Name") or "",
+                    "email": _clean(record.get("EmailAddress")) or "",
+                    "name": _clean(record.get("RealName") or record.get("Name")) or "",
                 }
             except requests.RequestException:
                 self._users[user_id] = None
@@ -284,22 +358,25 @@ def _resolve_or_create_user(email, name, tenant_id, summary):
     import app as core_app
     from app import db
 
-    email = (email or "").strip().lower()
-    if not email:
+    email = (_clean(email) or "").strip().lower()
+    if not email or len(email) > 160 or "@" not in email:
         return None
-    user = core_app.User.query.filter(
-        core_app.User.tenant_id == tenant_id,
-        db.func.lower(core_app.User.email) == email
-    ).first()
+    user = core_app.User.query.filter(db.func.lower(core_app.User.email) == email).first()
     if user:
-        return user
+        if user.tenant_id == tenant_id:
+            return user
+        # Email addresses are unique across the whole installation. The same
+        # person belongs to another tenant: never reuse or move that account;
+        # the ticket falls back to the unresolved-requester placeholder.
+        _note(summary, "errors", f"Requester {email} belongs to another tenant; recorded as unresolved.")
+        return None
     base_username = email.split("@", 1)[0][:70] or "rt-user"
     candidate, suffix = base_username, 1
     while core_app.User.query.filter_by(username=candidate).first():
         suffix += 1
         candidate = f"{base_username[:65]}-{suffix}"
     user = core_app.User(
-        username=candidate, name=name or email, email=email,
+        username=candidate, name=(_clean(name, 120) or email[:120]), email=email,
         password_hash=core_app.generate_password_hash(core_app.uuid.uuid4().hex),
         role="requester", tenant_id=tenant_id,
     )
@@ -319,16 +396,18 @@ def _placeholder_requester(tenant_id, summary):
     placeholder account (reused across every ticket and every import run,
     same as an unmatched RT queue reuses one SupportGroup) makes the gap
     visible and searchable instead."""
-    return _resolve_or_create_user(
-        "unresolved-rt-requester@rt-import.invalid", "RT Import (unresolved requester)",
-        tenant_id, summary,
-    )
+    # Emails are unique installation-wide, so each tenant needs its own
+    # placeholder address (tenant 1 keeps the original one).
+    address = ("unresolved-rt-requester@rt-import.invalid" if tenant_id == 1
+               else f"unresolved-rt-requester+t{tenant_id}@rt-import.invalid")
+    return _resolve_or_create_user(address, "RT Import (unresolved requester)", tenant_id, summary)
 
 
 def _resolve_or_create_group(queue_name, tenant_id, summary):
     import app as core_app
     from app import db
 
+    queue_name = _clean(queue_name, 120) or "RT Import"
     group = core_app.resolve_support_group_by_name(queue_name, tenant_id)
     if group:
         return group
@@ -384,27 +463,30 @@ def _save_imported_attachment(filename, content_bytes, uploaded_by_id, ticket, e
     from app import db
     from flask import current_app
 
-    original = core_app.secure_filename(filename or "") or ""
+    original = (core_app.secure_filename(_clean(filename) or "") or "")[:200]
     if not original:
-        summary["errors"].append(f"Attachment '{filename}': invalid filename, not imported.")
+        _note(summary, "errors", f"Attachment '{filename}': invalid filename, not imported.")
         return None
     ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
     allowed = core_app.ATTACHMENT_ALLOWED_TYPES.get(ext)
     if not allowed:
-        summary["errors"].append(f"Attachment '{original}': file type not allowed, not imported.")
+        _note(summary, "errors", f"Attachment '{original}': file type not allowed, not imported.")
         return None
     signature, mime_type = allowed
     if signature and not content_bytes.startswith(signature):
-        summary["errors"].append(f"Attachment '{original}': content doesn't match its extension, not imported.")
+        _note(summary, "errors", f"Attachment '{original}': content doesn't match its extension, not imported.")
         return None
     stored = f"{uuid.uuid4().hex}-{original}"
     path = os.path.join(current_app.config["UPLOAD_FOLDER"], stored)
     with open(path, "wb") as handle:
         handle.write(content_bytes)
+    # Remembered so a ticket that later fails (and is rolled back) does not
+    # leave orphaned files behind in the upload folder.
+    summary.setdefault("_written", []).append(path)
     scan_status = core_app.scan_attachment(path)
     if scan_status == "infected":
         os.remove(path)
-        summary["errors"].append(f"Attachment '{original}': rejected by malware scan, not imported.")
+        _note(summary, "errors", f"Attachment '{original}': rejected by malware scan, not imported.")
         return None
     attachment = core_app.FileAttachment(
         ticket_id=(ticket.id if ticket else None),
@@ -450,7 +532,8 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
     body = content
     imported_filenames = []
     skipped_filenames = []
-    attachment_ids = [item.get("id") for item in listing.get("items", []) if item.get("id")]
+    items = listing.get("items") if isinstance(listing.get("items"), list) else []
+    attachment_ids = [item.get("id") for item in items if isinstance(item, dict) and item.get("id")]
     # RT's attachment endpoint omits the (potentially large) Content field
     # by default, unless explicitly asked for -- without `fields=Content`,
     # every real file downloads as an empty body and fails its magic-byte
@@ -478,6 +561,11 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
         if not filename:
             continue
         content_bytes = _decode_attachment_bytes(meta.get("Content"), encoding)
+        if len(content_bytes) > _MAX_ATTACHMENT_BYTES:
+            _note(summary, "errors", f"Attachment '{_clean(filename)}': larger than "
+                  f"{_MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB, not imported.")
+            skipped_filenames.append(filename)
+            continue
         saved = _save_imported_attachment(filename, content_bytes, actor_user_id, ticket, enterprise_record, summary)
         if saved:
             imported_filenames.append(filename)
@@ -485,10 +573,28 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
             skipped_filenames.append(filename)
     notes = []
     if imported_filenames:
-        notes.append(f"[Attachment(s): {', '.join(imported_filenames)}]")
+        notes.append(f"[Attachment(s): {', '.join(_clean(n) for n in imported_filenames)}]")
     if skipped_filenames:
-        notes.append(f"[Attachment(s) not imported: {', '.join(skipped_filenames)}]")
-    return body, notes
+        notes.append(f"[Attachment(s) not imported: {', '.join(_clean(n) or '?' for n in skipped_filenames)}]")
+    return _clean(body), notes
+
+
+def _ticket_history(session, base_url, rt_id):
+    """Every page of a ticket's history (RT returns at most per_page items per
+    page), up to _MAX_HISTORY_TRANSACTIONS, as one {"items": [...]} payload."""
+    items, page = [], 1
+    while len(items) < _MAX_HISTORY_TRANSACTIONS:
+        payload = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200, "page": page})
+        batch = payload.get("items") if isinstance(payload.get("items"), list) else []
+        items.extend(batch)
+        try:
+            pages = int(payload.get("pages") or 1)
+        except (TypeError, ValueError):
+            pages = page
+        if not batch or page >= pages:
+            break
+        page += 1
+    return {"items": items[:_MAX_HISTORY_TRANSACTIONS]}
 
 
 def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, cache, ticket, enterprise_record,
@@ -512,14 +618,16 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, cach
     detail) so it isn't fetched twice."""
     if history is None:
         try:
-            history = _get(session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200})
+            history = _ticket_history(session, base_url, rt_id)
         except requests.RequestException as error:
-            summary["errors"].append(f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
+            _note(summary, "errors", f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
             return ""
-    transaction_ids = [item.get("id") for item in history.get("items", []) if item.get("id")]
+    items = history.get("items") if isinstance(history.get("items"), list) else []
+    transaction_ids = [item.get("id") for item in items if isinstance(item, dict) and item.get("id")]
     transactions_by_id = _fetch_many(session, base_url, "/REST/2.0/transaction/{}", transaction_ids)
     entries = []
     for transaction_id in transaction_ids:
+        _heartbeat()
         transaction = transactions_by_id.get(transaction_id)
         if not transaction:
             continue
@@ -578,9 +686,13 @@ def _custom_fields(detail):
     set so an unfilled custom field on the RT side doesn't show up as an
     empty row after import."""
     result = {}
-    for field in detail.get("CustomFields") or []:
-        name = field.get("name")
-        values = [v for v in (field.get("values") or []) if v]
+    fields = detail.get("CustomFields")
+    for field in (fields if isinstance(fields, list) else []):
+        if not isinstance(field, dict):
+            continue
+        name = _clean(field.get("name"))
+        raw = field.get("values")
+        values = [_clean(v) for v in (raw if isinstance(raw, list) else [raw]) if v]
         if name and values:
             result[name] = ", ".join(values)
     return result
@@ -597,8 +709,11 @@ def _set_created_at(row, detail):
     import app as core_app
 
     created = detail.get("Created")
-    if created:
-        parsed = core_app.parse_form_datetime(created.replace("T", " ").rstrip("Z"))
+    if isinstance(created, str) and created:
+        try:
+            parsed = core_app.parse_form_datetime(created.replace("T", " ").rstrip("Z"))
+        except Exception:  # noqa: BLE001 - an odd date keeps the import time instead
+            parsed = None
         if parsed:
             row.created_at = parsed
 
@@ -679,21 +794,20 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
     else:
         with ThreadPoolExecutor(max_workers=2) as pool:
             detail_future = pool.submit(_get, session, base_url, f"/REST/2.0/ticket/{rt_id}", params=detail_params)
-            history_future = pool.submit(
-                _get, session, base_url, f"/REST/2.0/ticket/{rt_id}/history", params={"per_page": 200},
-            )
+            history_future = pool.submit(_ticket_history, session, base_url, rt_id)
             detail = detail_future.result()
             try:
                 history = history_future.result()
             except requests.RequestException as error:
-                summary["errors"].append(f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
+                _note(summary, "errors", f"RT #{rt_id}: could not fetch history: {type(error).__name__}")
                 history = {"items": []}
 
     queue_name = cache.queue_name(detail.get("Queue")) or "RT Import"
     group = _resolve_or_create_group(queue_name, tenant_id, summary)
 
     requestor_emails = []
-    for ref in (detail.get("Requestor") or []):
+    requestors = detail.get("Requestor")
+    for ref in (requestors if isinstance(requestors, list) else [requestors] if requestors else []):
         contact = cache.user_contact(ref)
         if contact and contact.get("email"):
             requestor_emails.append((contact["email"], contact.get("name")))
@@ -708,7 +822,7 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
     if owner_contact and owner_contact.get("email"):
         assignee = _resolve_or_create_user(owner_contact["email"], owner_contact.get("name"), tenant_id, summary)
 
-    title = (detail.get("Subject") or f"RT ticket #{rt_id}").strip()[:180]
+    title = (_clean(detail.get("Subject")) or f"RT ticket #{rt_id}").strip()[:180] or f"RT ticket #{rt_id}"
     is_change = _is_change_request(detail.get("Subject"))
     if is_change:
         row = _create_change_ticket(rt_id, tenant_id, title, title, detail, requester, assignee, group, summary)
@@ -738,7 +852,7 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
             row.description = "\n\n".join(part for part in parts if part)[:20000]
         elif log:
             row.description = f"{title}\n\n{log}"[:60000]
-    summary["preview"].append({
+    _note(summary, "preview", {
         "rt_id": rt_id, "type": "Change" if is_change else "IT operations event",
         "number": row.number, "title": title,
         "queue": queue_name, "state": row.state, "priority": row.priority,
@@ -747,7 +861,7 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
 
 
 def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
-                   limit=None, session_factory=_rt_session):
+                   limit=None, session_factory=_rt_session, deadline=None, tick=None):
     """Imports RT tickets matching `query` (RT TicketSQL, default "id > 0"
     = everything) into ServiceOps for `tenant_id` as "IT operations events"
     (EnterpriseRecord, domain="event"), attributing system actions (the
@@ -759,7 +873,17 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
     Fails closed on missing tenant/configuration. dry_run performs the same
     matching/creation logic (so the preview reflects exactly what would
     happen, including which teams/users would be auto-created) but rolls
-    back instead of committing."""
+    back instead of committing.
+
+    Crash safety: each ticket runs in its own savepoint, so one ticket's
+    database error cannot poison the tickets after it. A real import commits
+    after every ticket, so a worker that is stopped keeps everything done so
+    far (re-running skips it). `deadline` (a time.monotonic() value) ends the
+    run early with summary["finished"] = False so the caller can resume it
+    later, and `tick` is called regularly so a long run can keep the worker's
+    liveness heartbeat fresh. A dry run looks at no more than
+    _DRY_RUN_SAMPLE new tickets."""
+    import time
     import app as core_app
     from app import db
 
@@ -784,23 +908,57 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
         "tenant_id": tenant_id, "dry_run": bool(dry_run),
         "tickets_seen": 0, "records_created": 0, "events_created": 0, "changes_created": 0,
         "already_imported": 0, "teams_created": 0, "users_created": 0, "comments_imported": 0,
-        "attachments_imported": 0, "errors": [], "preview": [],
+        "attachments_imported": 0, "errors": [], "preview": [], "finished": True,
     }
+    if dry_run:
+        limit = min(limit, _DRY_RUN_SAMPLE) if limit else _DRY_RUN_SAMPLE
 
+    def heartbeat():
+        if tick:
+            try:
+                tick()
+            except Exception:  # noqa: BLE001 - a heartbeat problem must not stop the import
+                pass
+
+    global _tick
+    _tick = heartbeat
+    # PostgreSQL: each ticket in its own savepoint. SQLite's Python driver
+    # turns a released savepoint into a real commit, which would make a dry
+    # run persist; there a failing ticket rolls back the (uncommitted) run.
+    savepoints = db.engine.dialect.name != "sqlite"
     session = session_factory(base_url, token)
     cache = _RecordCache(session, base_url)
     try:
         for rt_id in _paginate_ticket_ids(session, base_url, query):
+            heartbeat()
             if limit is not None and summary["records_created"] >= limit:
                 break
+            if deadline is not None and time.monotonic() >= deadline:
+                summary["finished"] = False  # resumed on the worker's next pass
+                break
             summary["tickets_seen"] += 1
+            summary["_written"] = []
             try:
-                _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache, summary, dry_run)
+                if savepoints:
+                    with db.session.begin_nested():
+                        _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache, summary, dry_run)
+                else:
+                    _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache, summary, dry_run)
+                if not dry_run:
+                    db.session.commit()
             except Exception as error:  # noqa: BLE001 - isolate one bad ticket from the whole batch
-                summary["errors"].append(f"RT #{rt_id}: {type(error).__name__}: {error}")
+                if not dry_run or not savepoints:
+                    db.session.rollback()
+                for path in summary.get("_written", []):
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+                _note(summary, "errors", f"RT #{rt_id}: {type(error).__name__}: {str(error)[:300]}")
     except requests.RequestException as error:
-        summary["errors"].append(f"RT request failed: {type(error).__name__}: {error}")
+        _note(summary, "errors", f"RT request failed: {type(error).__name__}: {error}")
     finally:
+        _tick = None
         session.close()
         ca_bundle_path = getattr(session, "verify", None)
         if isinstance(ca_bundle_path, str) and ca_bundle_path.startswith(tempfile.gettempdir()):
@@ -809,6 +967,7 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
             except OSError:
                 pass
 
+    summary.pop("_written", None)
     if dry_run:
         db.session.rollback()
     else:

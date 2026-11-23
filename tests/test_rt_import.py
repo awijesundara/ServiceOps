@@ -4,10 +4,12 @@ These mock RT entirely (no live RT instance required) by passing a fake
 session factory into import_from_rt, matching the same network-mocking
 approach used by tests/test_netbox_sync.py.
 """
+import json
 import os
 import tempfile
 
 import pytest
+import requests
 
 import base64
 
@@ -30,14 +32,28 @@ def app():
 
 
 class FakeResponse:
-    def __init__(self, payload):
+    """Behaves like requests.Response for what rt_import uses: streamed body,
+    headers and close (the import reads responses streamed, with a size cap)."""
+
+    def __init__(self, payload, status=200, raw=None):
         self._payload = payload
+        self.status_code = status
+        self._raw = raw if raw is not None else json.dumps(payload).encode()
+        self.headers = {"Content-Length": str(len(self._raw))}
 
     def raise_for_status(self):
-        pass
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}")
 
     def json(self):
         return self._payload
+
+    def iter_content(self, size):
+        for start in range(0, len(self._raw), size):
+            yield self._raw[start:start + size]
+
+    def close(self):
+        pass
 
 
 class FakeRTSession:
@@ -51,7 +67,7 @@ class FakeRTSession:
         self.transaction_attachments = transaction_attachments or {}
         self.attachment_meta = attachment_meta or {}
 
-    def get(self, url, params=None, timeout=None):
+    def get(self, url, params=None, timeout=None, **kwargs):
         if url.endswith("/REST/2.0/tickets"):
             items = [{"id": t_id} for t_id in self.tickets]
             return FakeResponse({"items": items, "page": 1, "pages": 1})
