@@ -6335,6 +6335,9 @@
    "javascript": true
   },
   {
+   "id": "In progress: {records_created} created, {already_imported} already imported, {errors} error(s) so far. It continues in the background."
+  },
+  {
    "id": "In repair"
   },
   {
