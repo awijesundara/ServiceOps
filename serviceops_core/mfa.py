@@ -30,7 +30,16 @@ def _totp_step(user, code, at=None):
     code = code.replace(" ", "")
     if not (code.isdigit() and len(code) == 6):
         return None
-    totp = pyotp.TOTP(settings_cipher().decrypt(user.mfa_secret_encrypted.encode()).decode())
+    try:
+        totp = pyotp.TOTP(settings_cipher().decrypt(user.mfa_secret_encrypted.encode()).decode())
+    except ValueError:
+        # pyotp >= 2.12 refuses secrets under 112 bits. ServiceOps creates
+        # 160-bit secrets, but an older or imported one may be shorter: the
+        # code is then not accepted (the user re-enrols) instead of the login
+        # failing with a server error.
+        from flask import current_app
+        current_app.logger.warning("MFA secret for user %s is too short for TOTP; re-enrolment required", user.id)
+        return None
     current = int((time.time() if at is None else at) // TOTP_PERIOD_SECONDS)
     for step in (current - 1, current, current + 1):
         if user.mfa_last_totp_step is not None and step <= user.mfa_last_totp_step:

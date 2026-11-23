@@ -464,7 +464,7 @@ def test_device_artwork_rejects_non_numeric_netbox_id_before_any_request(app, cl
 # 9. A pending MFA login dies with a credential change ------------------------
 
 def test_pending_mfa_login_is_voided_by_a_password_change(app):
-    secret = "JBSWY3DPEHPK3PXP"
+    secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"  # 160 bits: pyotp >= 2.12 refuses under 112
     with app.app_context():
         admin = User.query.filter_by(username="admin").one()
         admin.mfa_enabled = True
@@ -510,3 +510,13 @@ def test_authenticated_json_routes_reject_non_objects(app, client):
                  f"/api/v1/tickets/{number}/comments"):
         response = client.post(path, headers=bearer, json=["not", "an", "object"])
         assert response.status_code == 400, (path, response.status_code)
+
+
+def test_a_too_short_legacy_mfa_secret_rejects_the_code_instead_of_crashing(app):
+    from serviceops_core.mfa import _totp_step
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").one()
+        admin.mfa_enabled = True
+        admin.mfa_secret_encrypted = settings_cipher().encrypt(b"JBSWY3DPEHPK3PXP").decode()  # 80 bits
+        db.session.commit()
+        assert _totp_step(admin, "123456") is None
