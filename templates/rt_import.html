@@ -50,21 +50,21 @@
     <table class="task-list">
       <thead><tr><th>{{ tr('Queued') }}</th><th>{{ tr('Mode') }}</th><th>{{ tr('Query') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Result') }}</th></tr></thead>
       <tbody>
-        {% for job in recent_jobs %}
+        {% for job in recent_jobs %}{% set r = summaries.get(job.id) %}
         <tr>
           <td>{{ (job.created_at|usertime('%b %d, %H:%M')) }}</td>
           <td>{{ tr('Preview') if job.dry_run else tr('Apply') }}{% if job.record_limit %} · {{ tr('limit {record_limit}', record_limit=(job.record_limit)) }}{% endif %}</td>
           <td><code>{{ job.search_query }}</code></td>
           <td>{{ status_badge(job.status) }}</td>
           <td>
-            {% if job.status == 'Completed' and job.result %}
-            {{ tr('{tickets_seen} seen · {records_created} {value} ({events_created} events, {changes_created} changes) · {already_imported} already imported', tickets_seen=(job.result.tickets_seen), records_created=(job.result.records_created), value=(tr('would be created') if job.dry_run else 'created'), events_created=(job.result.events_created), changes_created=(job.result.changes_created), already_imported=(job.result.already_imported)) }} ·
-            {% if not job.dry_run %}{{ tr('{attachments_imported} attachment(s)', attachments_imported=(job.result.attachments_imported)) }} ·{% endif %}
-            {{ tr('{errors} error(s)', errors=(job.result.errors|length)) }}
-            {% if job.result.errors %}<details><summary>{{ tr('Show errors') }}</summary><ul>{% for error in job.result.errors %}<li>{{ error }}</li>{% endfor %}</ul></details>{% endif %}
-            {% if job.result.preview %}<details><summary>{{ tr('Show preview rows') }}</summary><div class="task-list-scroll"><table class="task-list"><thead><tr><th>RT #</th><th>{{ tr('Type') }}</th><th>{{ tr('Number') }}</th><th>{{ tr('Title') }}</th><th>{{ tr('Queue → Team') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Requester') }}</th></tr></thead><tbody>{% for row in job.result.preview if row.rt_id %}<tr><td>{{ row.rt_id }}</td><td>{{ row.type }}</td><td>{{ row.number }}</td><td><span class="truncate" title="{{ row.title }}">{{ row.title }}</span></td><td>{{ row.queue }}</td><td>{{ tr_value(row.state) }}</td><td>{{ tr_value(row.priority) }}</td><td><span class="truncate" title="{{ row.requester or tr('Unmatched') }}">{{ row.requester or tr('Unmatched') }}</span></td></tr>{% endfor %}</tbody></table></div></details>{% endif %}
-            {% elif job.status == 'Running' and job.result %}
-            {{ tr('In progress: {records_created} created, {already_imported} already imported, {errors} error(s) so far. It continues in the background.', records_created=(job.result.records_created), already_imported=(job.result.already_imported), errors=(job.result.errors|length)) }}
+            {% if job.status == 'Completed' and r %}
+            {{ tr('{tickets_seen} seen · {records_created} {value} ({events_created} events, {changes_created} changes) · {already_imported} already imported', tickets_seen=(r.tickets_seen), records_created=(r.records_created), value=(tr('would be created') if job.dry_run else 'created'), events_created=(r.events_created), changes_created=(r.changes_created), already_imported=(r.already_imported)) }} ·
+            {% if not job.dry_run %}{{ tr('{attachments_imported} attachment(s)', attachments_imported=(r.attachments_imported)) }} ·{% endif %}
+            {{ tr('{errors} error(s)', errors=(r.errors_total if r.errors_total is not none else '…')) }}{% if r.truncated %} · {{ tr('Details of this older run are too large to show.') }}{% endif %}
+            {% if r.errors %}<details><summary>{{ tr('Show errors') }}</summary><ul>{% for error in r.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% if r.errors_total and r.errors_total > r.errors|length %}<p class="muted">{{ tr('Showing the first {shown} of {total}.', shown=(r.errors|length), total=(r.errors_total)) }}</p>{% endif %}</details>{% endif %}
+            {% if r.preview %}<details><summary>{{ tr('Show preview rows') }}</summary><div class="task-list-scroll"><table class="task-list"><thead><tr><th>RT #</th><th>{{ tr('Type') }}</th><th>{{ tr('Number') }}</th><th>{{ tr('Title') }}</th><th>{{ tr('Queue → Team') }}</th><th>{{ tr('State') }}</th><th>{{ tr('Priority') }}</th><th>{{ tr('Requester') }}</th></tr></thead><tbody>{% for row in r.preview if row.rt_id %}<tr><td>{{ row.rt_id }}</td><td>{{ row.type }}</td><td>{{ row.number }}</td><td><span class="truncate" title="{{ row.title }}">{{ row.title }}</span></td><td>{{ row.queue }}</td><td>{{ tr_value(row.state) }}</td><td>{{ tr_value(row.priority) }}</td><td><span class="truncate" title="{{ row.requester or tr('Unmatched') }}">{{ row.requester or tr('Unmatched') }}</span></td></tr>{% endfor %}</tbody></table></div></details>{% endif %}
+            {% elif job.status == 'Running' and r %}
+            {{ tr('In progress: {records_created} created, {already_imported} already imported, {errors} error(s) so far. It continues in the background.', records_created=(r.records_created), already_imported=(r.already_imported), errors=(r.errors_total if r.errors_total is not none else '…')) }}
             {% elif job.status == 'Failed' %}{{ job.error }}
             {% else %}—{% endif %}
           </td>

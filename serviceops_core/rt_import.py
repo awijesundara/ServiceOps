@@ -974,3 +974,64 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
         db.session.commit()
 
     return summary
+
+
+# ---- Small views of stored job results -------------------------------------------------------
+# Results saved by imports before 1.114.15 were not capped and can be tens of megabytes. The import
+# page must never load or parse those in full (it did, about ten times per job, and the web worker
+# was OOM-killed), so it reads a bounded summary instead.
+RESULT_VIEW_ITEMS = 100
+RESULT_FULL_PARSE_BYTES = 2 * 1024 * 1024
+_COUNT_KEYS = ("tickets_seen", "records_created", "events_created", "changes_created", "already_imported",
+               "teams_created", "users_created", "comments_imported", "attachments_imported")
+
+
+def summarize_result(result):
+    """Counts plus the first RESULT_VIEW_ITEMS errors and preview rows, with the totals."""
+    if not isinstance(result, dict):
+        return None
+    view = {key: result.get(key, 0) for key in _COUNT_KEYS}
+    for key in ("errors", "preview"):
+        items = result.get(key) if isinstance(result.get(key), list) else []
+        items = [item for item in items if not (isinstance(item, dict) and item.get("omitted"))
+                 and not (isinstance(item, str) and item.startswith("... further entries omitted"))]
+        view[key] = items[:RESULT_VIEW_ITEMS]
+        view[key + "_total"] = len(items)
+    view["dry_run"] = bool(result.get("dry_run"))
+    return view
+
+
+def summarize_result_head(head):
+    """Counts read from the start of an oversized stored result (they are written before the lists)."""
+    view = {key: 0 for key in _COUNT_KEYS}
+    for key in _COUNT_KEYS:
+        found = re.search(rf'"{key}"\s*:\s*(\d+)', head or "")
+        if found:
+            view[key] = int(found.group(1))
+    view.update(errors=[], preview=[], errors_total=None, preview_total=None, truncated=True)
+    return view
+
+
+def job_summaries(job_ids):
+    """{job id: bounded summary} for the import page, without loading large results in full."""
+    import app as core_app
+    from app import db
+
+    job = core_app.RTImportJob
+    summaries = {}
+    if not job_ids:
+        return summaries
+    sizes = db.session.query(job.id, db.func.length(job.result_json)).filter(job.id.in_(job_ids)).all()
+    for job_id, size in sizes:
+        if not size:
+            continue
+        if size <= RESULT_FULL_PARSE_BYTES:
+            text = db.session.query(job.result_json).filter(job.id == job_id).scalar()
+            try:
+                summaries[job_id] = summarize_result(json.loads(text))
+            except ValueError:
+                summaries[job_id] = summarize_result_head(text[:4000])
+        else:
+            head = db.session.query(db.func.substr(job.result_json, 1, 4000)).filter(job.id == job_id).scalar()
+            summaries[job_id] = summarize_result_head(head)
+    return summaries

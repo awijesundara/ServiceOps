@@ -2747,9 +2747,13 @@ def register(app):
             db.session.commit()
             flash(tr("RT import queued (job #{id}). This runs in the background.", id=job.id), "success")
             return redirect(url_for("rt_import"))
-        recent_jobs = RTImportJob.query.filter_by(
+        # The stored results are not loaded with the rows (they can be very large for imports run
+        # before results were capped); the page gets a bounded summary per job instead.
+        recent_jobs = RTImportJob.query.options(db.defer(RTImportJob.result_json)).filter_by(
             tenant_id=core.tenant_context_id()
         ).order_by(RTImportJob.id.desc()).limit(10).all()
+        from serviceops_core.rt_import import job_summaries
+        summaries = job_summaries([job.id for job in recent_jobs])
         # B-322: RT connection settings (host/token/TLS) render directly on
         # this page instead of a separate administration settings page, so every
         # RT-related control lives in one place. Saving posts to the
@@ -2763,7 +2767,7 @@ def register(app):
             rt_values[definition["key"]] = "" if definition["type"] == "secret" else value
             definition["configured"] = bool(value) if definition["type"] == "secret" else False
         return render_template(
-            "rt_import.html", rt_enabled=setting_bool("RT_ENABLED"), recent_jobs=recent_jobs,
+            "rt_import.html", rt_enabled=setting_bool("RT_ENABLED"), recent_jobs=recent_jobs, summaries=summaries,
             rt_definitions=rt_definitions, rt_values=rt_values,
         )
 

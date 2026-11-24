@@ -4510,6 +4510,9 @@
    "id": "Details"
   },
   {
+   "id": "Details of this older run are too large to show."
+  },
+  {
    "id": "Device"
   },
   {
@@ -13559,6 +13562,9 @@
   },
   {
    "id": "Showing the first {relationships} of {relationships_total} relationships. Open a configuration item or the"
+  },
+  {
+   "id": "Showing the first {shown} of {total}."
   },
   {
    "id": "Showing the latest 100 of {count} events. The API provides paginated access to all events."
