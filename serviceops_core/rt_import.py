@@ -77,6 +77,7 @@ _MAX_RESPONSE_BYTES = 40 * 1024 * 1024     # any single RT response (base64 adds
 _MAX_HISTORY_TRANSACTIONS = 2000           # per ticket
 _MAX_SUMMARY_ITEMS = 500                   # errors and preview rows kept in a job result
 _DRY_RUN_SAMPLE = 200                      # a preview looks at most this many new tickets
+_MAX_LOG_CHARS = 60000                     # the longest description a record keeps
 
 # RT ships with new/open/stalled/resolved/rejected/deleted by default, but
 # almost every real deployment (this one included) customizes its lifecycle
@@ -540,13 +541,22 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
     # check regardless of type, which is what made every attachment (not
     # just disallowed ones) show up as "content doesn't match its
     # extension" against a real RT instance.
-    metas = _fetch_many(
-        session, base_url, "/REST/2.0/attachment/{}", attachment_ids,
-        params={"fields": "Content,ContentType,ContentEncoding,Filename"},
-    )
+    # One attachment at a time, each read with a size cap: downloading a message's attachments
+    # in parallel held all of them (base64 text, parsed JSON and decoded bytes) in memory at once,
+    # which is what got the worker OOM-killed on tickets with several large files.
     for attachment_id in attachment_ids:
-        meta = metas.get(attachment_id)
-        if not meta:
+        _heartbeat()
+        try:
+            meta = _get(session, base_url, f"/REST/2.0/attachment/{attachment_id}",
+                        params={"fields": "Content,ContentType,ContentEncoding,Filename"},
+                        max_bytes=_MAX_ATTACHMENT_BYTES * 4 // 3 + 64 * 1024)
+        except RTResponseError as error:
+            if "too large" in str(error):
+                _note(summary, "errors", f"Attachment {attachment_id}: larger than "
+                      f"{_MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB, not imported.")
+                skipped_filenames.append(f"attachment {attachment_id}")
+            continue
+        except requests.RequestException:
             continue
         content_type = (meta.get("ContentType") or "").lower()
         filename = meta.get("Filename")
@@ -567,6 +577,7 @@ def _transaction_body(session, base_url, transaction_id, transaction, actor_user
             skipped_filenames.append(filename)
             continue
         saved = _save_imported_attachment(filename, content_bytes, actor_user_id, ticket, enterprise_record, summary)
+        del content_bytes, meta
         if saved:
             imported_filenames.append(filename)
         else:
@@ -624,9 +635,15 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, cach
             return ""
     items = history.get("items") if isinstance(history.get("items"), list) else []
     transaction_ids = [item.get("id") for item in items if isinstance(item, dict) and item.get("id")]
-    transactions_by_id = _fetch_many(session, base_url, "/REST/2.0/transaction/{}", transaction_ids)
     entries = []
-    for transaction_id in transaction_ids:
+    log_chars = 0
+    # Transactions are fetched in batches of 50 (not the whole history at once: up to 2000 message
+    # bodies held together), and the log text stops growing at the description's own limit.
+    transactions_by_id = {}
+    for index, transaction_id in enumerate(transaction_ids):
+        if index % 50 == 0:
+            transactions_by_id = _fetch_many(session, base_url, "/REST/2.0/transaction/{}",
+                                             transaction_ids[index:index + 50])
         _heartbeat()
         transaction = transactions_by_id.get(transaction_id)
         if not transaction:
@@ -646,10 +663,13 @@ def _correspondence_log(session, base_url, rt_id, tenant_id, actor_user_id, cach
             if not body and not notes:
                 continue
             lines = [f"--- {created} · {creator_label} ({txn_type}) ---"]
-            if body:
-                lines.append(body)
+            if body and log_chars < _MAX_LOG_CHARS:
+                lines.append(body[:_MAX_LOG_CHARS])
             lines.extend(notes)
-            entries.append("\n".join(lines))
+            entry = "\n".join(lines)
+            log_chars += len(entry)
+            if log_chars < _MAX_LOG_CHARS * 2:  # beyond the description limit only attachments still matter
+                entries.append(entry)
             summary["comments_imported"] += 1
         elif txn_type == "Status":
             old_value = transaction.get("OldValue") or "?"
@@ -861,7 +881,7 @@ def _import_one_ticket(session, base_url, rt_id, tenant_id, actor_user_id, cache
 
 
 def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
-                   limit=None, session_factory=_rt_session, deadline=None, tick=None):
+                   limit=None, session_factory=_rt_session, deadline=None, tick=None, on_ticket=None):
     """Imports RT tickets matching `query` (RT TicketSQL, default "id > 0"
     = everything) into ServiceOps for `tenant_id` as "IT operations events"
     (EnterpriseRecord, domain="event"), attributing system actions (the
@@ -938,6 +958,8 @@ def import_from_rt(tenant_id, actor_user_id, dry_run=False, query="id > 0",
                 break
             summary["tickets_seen"] += 1
             summary["_written"] = []
+            if on_ticket:
+                on_ticket(rt_id)  # recorded first, so a crash on this ticket can be identified
             try:
                 if savepoints:
                     with db.session.begin_nested():

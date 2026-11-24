@@ -5568,6 +5568,7 @@ def touch_worker_heartbeat():
 
 
 RT_IMPORT_SLICE_SECONDS = 60
+RT_IMPORT_MAX_CRASHES = 3
 
 
 def _merge_rt_summary(previous, current):
@@ -5622,10 +5623,34 @@ def process_rt_import_jobs(limit=1):
                 db.session.commit()
                 continue
             previous = json.loads(job.result_json) if job.result_json else None
+            # A slice that started but never finished means the worker was stopped mid-slice, most
+            # likely killed for memory on one ticket. Resuming would hit the same ticket again and
+            # crash-loop, so after RT_IMPORT_MAX_CRASHES the job stops and names that ticket.
+            state = (previous or {}).get("_worker") or {}
+            if state.get("inflight"):
+                state["crashes"] = state.get("crashes", 0) + 1
+                if state["crashes"] >= RT_IMPORT_MAX_CRASHES:
+                    current = state.get("ticket") or "?"
+                    job.status = "Failed"
+                    job.error = (f"Stopped after the worker restarted {state['crashes']} times while importing RT #{current} "
+                                 f"(most likely it ran out of memory on that ticket). Everything imported so far is kept; "
+                                 f"to continue, run the import again with a query that skips it, e.g. \"id != {current}\".")
+                    job.finished_at = now()
+                    db.session.commit()
+                    continue
+            state["inflight"] = True
+            previous = dict(previous or {}, _worker=state)
+            job.result_json = json.dumps(previous)
             if job.status == "Pending":
                 job.status = "Running"
                 job.started_at = now()
             db.session.commit()
+
+            def on_ticket(rt_id, job_id=job_id, state=state):
+                state["ticket"] = rt_id
+                db.session.execute(db.update(RTImportJob).where(RTImportJob.id == job_id).values(
+                    result_json=json.dumps(dict(previous, _worker=state))))
+                db.session.commit()
             done_before = (previous or {}).get("records_created", 0)
             remaining = None if job.record_limit is None else max(0, job.record_limit - done_before)
             touch_worker_heartbeat()
@@ -5634,7 +5659,7 @@ def process_rt_import_jobs(limit=1):
                     job.tenant_id, job.actor_user_id, dry_run=job.dry_run,
                     query=job.search_query, limit=remaining,
                     deadline=None if job.dry_run else time_module.monotonic() + RT_IMPORT_SLICE_SECONDS,
-                    tick=touch_worker_heartbeat,
+                    tick=touch_worker_heartbeat, on_ticket=None if job.dry_run else on_ticket,
                 ) if remaining != 0 else {"finished": True}
             except RTImportError as error:
                 db.session.rollback()
@@ -5651,7 +5676,8 @@ def process_rt_import_jobs(limit=1):
                 job.finished_at = now()
             else:
                 job = db.session.get(RTImportJob, job_id)
-                merged = _merge_rt_summary(previous, result)
+                merged = _merge_rt_summary({k: v for k, v in previous.items() if k != "_worker"}, result)
+                merged["_worker"] = {"crashes": state.get("crashes", 0)}  # slice finished: not in flight
                 job.result_json = json.dumps(merged)
                 if result.get("finished", True):
                     job.status = "Completed"
