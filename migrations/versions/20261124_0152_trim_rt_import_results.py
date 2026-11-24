@@ -18,6 +18,9 @@ revision = "20261124_0152"
 down_revision = "20261031_0151"
 branch_labels = None
 depends_on = None
+# Expand: no schema change. A trimmed result is still readable by 1.114.15 during a rolling upgrade
+# (it shows fewer rows), so old and new application versions can run side by side.
+serviceops_migration_phase = "expand"
 
 LIMIT = 1024 * 1024
 KEEP = 100
