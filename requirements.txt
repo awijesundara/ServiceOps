@@ -9,7 +9,7 @@ alembic==1.20.1
 # mistake upstream. Pinned to the last release before it.
 Mako==1.4.3
 Flask-Login==0.6.3
-Authlib==1.9.8
+Authlib==1.9.10
 joserfc==1.8.0
 ldap3==2.9.1
 requests==2.34.2
@@ -24,9 +24,9 @@ Werkzeug==3.1.9
 setuptools==84.2.1
 msgpack==1.2.4
 argon2-cffi==25.1.0
-pyotp==2.12.0
-pysnmp==7.1.33
+pyotp==2.12.1
+pysnmp==7.1.34
 dnspython==2.9.2
-boto3==1.44.4
+boto3==1.44.10
 webauthn==3.0.1
 httpx[http2]==0.28.1
